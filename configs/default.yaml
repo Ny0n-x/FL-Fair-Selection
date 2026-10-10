@@ -11,3 +11,4 @@ good_def: count # count | weighted
 T: 10
 M: 1
 eps: 0.1
+filler: random
