@@ -77,6 +77,7 @@ def plot_client_acc_hist(runs, alpha, bins=20):
     """Per-client accuracy histogram per method, pooled over seeds.
     Solid line is the mean, dotted line the worst-10% mean."""
     groups = {}
+    seeds = {r[KEYS["seed"]] for r in runs if r[KEYS["alpha"]] == alpha}
     for r in runs:
         if r[KEYS["alpha"]] == alpha:
             groups.setdefault((r[KEYS["selector"]], r[KEYS["good"]]), []).extend(r[KEYS["client_acc"]])
@@ -97,7 +98,7 @@ def plot_client_acc_hist(runs, alpha, bins=20):
         ax.set_xlim(0, 1)
         ax.set_ylabel("clients", fontsize=8, color=TEXT2)
     axes[-1, 0].set_xlabel("final per-client test accuracy", fontsize=9, color=TEXT2)
-    fig.suptitle(f"Per-client accuracy, alpha = {alpha} (pooled over seeds)", fontsize=10,
+    fig.suptitle(f"Per-client accuracy, alpha = {alpha:g}, {len(seeds)} seed(s)", fontsize=10,
                  color=TEXT, x=0.02, ha="left")
     fig.tight_layout()
     return fig
@@ -217,6 +218,30 @@ def plot_size_breakdown(bd):
     fig.legend(handles, labels, loc="lower center", ncol=min(len(labels), 4), fontsize=8,
                frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout(rect=(0, 0.08, 1, 1))
+    return fig
+
+
+def plot_gate1(run):
+    """Per-client accuracy against selection count and data size for one run."""
+    from scipy.stats import spearmanr
+    acc = np.asarray(run[KEYS["client_acc"]], dtype=float)
+    colour = style(run[KEYS["selector"]], run[KEYS["good"]])["color"]
+    fig, axes = _fig(1, 2, 8, 3.2)
+    for ax, key, label, log in ((axes[0, 0], "counts", "times selected", False),
+                                (axes[0, 1], "sizes", "local data size (log)", True)):
+        x = np.asarray(run[KEYS[key]], dtype=float)
+        rho, p = spearmanr(x, acc)
+        ax.scatter(x, acc, s=28, color=colour, edgecolor=SURFACE, linewidth=1)
+        if log:
+            ax.set_xscale("log")
+        ax.set_xlabel(label, fontsize=8, color=TEXT2)
+        ax.set_title(f"Spearman rho = {rho:+.2f} (p = {p:.2f})", fontsize=9, color=TEXT, loc="left")
+        ax.grid(axis="x", color=GRID, linewidth=0.8)
+    axes[0, 0].set_ylabel("final client accuracy", fontsize=8, color=TEXT2)
+    fig.suptitle(f"Gate 1, {NAMES.get(run[KEYS['selector']], run[KEYS['selector']])}, "
+                 f"alpha = {run[KEYS['alpha']]:g}, seed {run[KEYS['seed']]}",
+                 fontsize=10, color=TEXT, x=0.02, ha="left")
+    fig.tight_layout()
     return fig
 
 
