@@ -33,8 +33,6 @@ BASELINES = {
 }
 SEQ = matplotlib.colors.LinearSegmentedColormap.from_list(
     "seq_blue", ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
-DIV = matplotlib.colors.LinearSegmentedColormap.from_list(
-    "deficit", ["#184f95", "#6da7ec", "#f0efec", "#f08a89", "#b3261e"])
 NAMES = {"random": "Random", "round_robin": "Round-Robin", "power_of_choice": "Power-of-Choice",
          "qffl": "q-FFL", "divfl": "DivFL", "propfair": "PropFair",
          "prop_fair": "Proportional", "guarantee": "Guarantee", "ef1": "EF1-Lag"}
@@ -168,34 +166,36 @@ def deficit_matrix(run):
     return (expected - picks.cumsum(0)).T
 
 
-def plot_participation(run):
-    """Selection deficit of every client over rounds, clients sorted by data size,
-    with the final deficit on the right. Red is behind the fair share, blue ahead of it."""
-    d = deficit_matrix(run)
-    order = np.argsort(run[KEYS["sizes"]])
-    d = d[order]
-    lim = np.abs(d).max()
-    st = style(run[KEYS["selector"]], run[KEYS["good"]])
-    fig, (ax, side, cax) = plt.subplots(
-        1, 3, figsize=(FULL, 2.5), gridspec_kw={"width_ratios": [6, 1.2, 0.15], "wspace": 0.08})
-    im = ax.imshow(d, aspect="auto", origin="lower", cmap=DIV, vmin=-lim, vmax=lim,
-                   extent=(0.5, d.shape[1] + 0.5, -0.5, d.shape[0] - 0.5), interpolation="nearest")
-    ax.grid(False)
+def plot_deficit(runs, alpha):
+    """Spread of client selection deficits over rounds, one colour per method.
+    Solid line is the most underserved client, the band covers the middle 80% of clients
+    and the thin line is the most overserved client. The dashed gray curve is the +-2 std
+    spread that uniform random selection gives under the count definition."""
+    groups = _group(runs, alpha)
+    fig, ax = plt.subplots(figsize=(COL, 2.4))
+    for key, rs in groups.items():
+        st = style(*key)
+        mats = [deficit_matrix(r) for r in rs]
+        hi = np.mean([m.max(0) for m in mats], 0)
+        lo = np.mean([m.min(0) for m in mats], 0)
+        q10 = np.mean([np.percentile(m, 10, axis=0) for m in mats], 0)
+        q90 = np.mean([np.percentile(m, 90, axis=0) for m in mats], 0)
+        x = np.arange(1, hi.size + 1)
+        ax.fill_between(x, q10, q90, color=st["color"], alpha=0.2, lw=0)
+        ax.plot(x, hi, color=st["color"], ls=st["ls"], label=st["label"])
+        ax.plot(x, lo, color=st["color"], ls=st["ls"], lw=0.6)
+    r0 = next(iter(groups.values()))[0]
+    n, k = len(r0[KEYS["sizes"]]), len(r0[KEYS["selected"]][0])
+    p = k / n
+    sd = 2 * np.sqrt(x * p * (1 - p))
+    ax.plot(x, sd, color=INK2, ls="--", lw=0.8, label=r"Random $\pm 2\sigma$")
+    ax.plot(x, -sd, color=INK2, ls="--", lw=0.8)
+    ax.axhline(0, color=INK, lw=0.6)
+    ax.set_xlim(1, x[-1])
     ax.set_xlabel("Communication round")
-    ax.set_ylabel("Client (sorted by data size)")
-    _panel(ax, "a", f"Selection deficit over rounds ({st['label']})")
-    final = d[:, -1]
-    side.barh(np.arange(d.shape[0]), final, height=0.85, color=DIV((final + lim) / (2 * lim)),
-              lw=0)
-    side.axvline(0, color=INK, lw=0.6)
-    side.set_ylim(-0.5, d.shape[0] - 0.5)
-    side.grid(axis="y", visible=False)
-    side.tick_params(labelleft=False)
-    side.set_xlabel("Final deficit")
-    _panel(side, "b", "Round 100" if d.shape[1] == 100 else f"Round {d.shape[1]}")
-    cb = fig.colorbar(im, cax=cax)
-    cb.set_label("Fair share minus times selected")
-    cb.outline.set_linewidth(0.5)
+    ax.set_ylabel("Selection deficit")
+    ax.legend(loc="upper left")
+    fig.tight_layout()
     return fig
 
 
@@ -317,10 +317,10 @@ def main():
     tag = f"alpha{a.alpha:g}"
     save(plot_curves(runs, a.alpha), a.out, f"curves_{tag}")
     save(plot_acc_cdf(runs, a.alpha), a.out, f"client_acc_cdf_{tag}")
+    save(plot_deficit(runs, a.alpha), a.out, f"deficit_{tag}")
     for r in runs:
         if r[KEYS["alpha"]] == a.alpha and r[KEYS["seed"]] == a.seed:
             name = f"{r[KEYS['selector']]}_{r[KEYS['good']]}_{tag}_seed{a.seed}"
-            save(plot_participation(r), a.out, f"participation_{name}")
             save(plot_selection_counts(r), a.out, f"selection_counts_{name}")
             if r[KEYS["selector"]] == "random":
                 save(plot_gate1(r), a.out, f"gate1_{tag}_seed{a.seed}")
