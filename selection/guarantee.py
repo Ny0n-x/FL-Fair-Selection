@@ -25,24 +25,23 @@ class GuaranteeSelector(Selector):
                 return False
         return True
 
-    def select(self, round_idx, client_losses):
+    def select(self, round_idx, ctx):
         d = self.tracker.deadlines()
-        if self.filler == "loss" and client_losses:
-            pri = np.array([client_losses.get(i, -np.inf) for i in range(self.N)])
+        if self.filler == "loss":
+            pri = np.asarray(ctx.loss_fn(range(self.N)), dtype=float)
+            self.extra_queries += self.N  # loss filler queries every client
         else:
             pri = self.rng.random(self.N)
-        # EDF base set: earliest deadlines first, ties broken by priority
         S = [int(i) for i in np.lexsort((-pri, d))[:self.K]]
-        # try to swap in higher-priority clients while the guarantee stays safe
         for c in np.argsort(-pri):
             c = int(c)
             if c in S:
                 continue
-            worst = max(S, key=lambda i: d[i])      # least urgent current member
+            worst = max(S, key=lambda i: d[i])
             trial = [x for x in S if x != worst] + [c]
             if self._feasible_after(trial):
                 S = trial
         return S
 
-    def update(self, round_idx, selected, client_losses):
+    def update(self, round_idx, selected, ctx):
         self.tracker.record(selected)
