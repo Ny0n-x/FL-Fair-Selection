@@ -1,8 +1,7 @@
 """Paper figures.
 
-Our rules are coloured (prop_fair blue, guarantee orange, ef1 aqua). Solid lines and filled
-markers are count-based, dashed lines and hollow markers weighted. Baselines are grays with
-distinct markers. Widths match a single (3.4 in) or double (7 in) column.
+Each method has a fixed colour and marker. Solid lines and filled markers are count-based,
+dashed lines and hollow markers weighted. Widths match a single (3.4 in) or double (7 in) column.
 
 Usage: python -m metrics.plots [results_dir] [--out figures] [--alpha 0.1] [--seed 0]
 """
@@ -22,15 +21,20 @@ from metrics.metrics import worst_frac_mean  # noqa: E402
 
 COL, FULL = 3.4, 7.0
 INK, INK2, GRID = "#1a1a1a", "#555555", "#e5e5e5"
-OURS = {"prop_fair": "#2a78d6", "guarantee": "#eb6834", "ef1": "#1baf7a"}
-BASELINES = {  # selector -> (gray, marker)
-    "random": ("#2b2b2b", "o"),
-    "round_robin": ("#7a7a7a", "s"),
-    "power_of_choice": ("#2b2b2b", "^"),
-    "qffl": ("#7a7a7a", "D"),
-    "divfl": ("#2b2b2b", "v"),
-    "propfair": ("#7a7a7a", "P"),
+# Colours follow the validated categorical slot order, so adjacent slots stay CVD-safe.
+OURS = {"guarantee": ("#eb6834", "o"), "prop_fair": ("#1baf7a", "o"), "ef1": ("#4a3aa7", "o")}
+BASELINES = {
+    "random": ("#2a78d6", "s"),
+    "power_of_choice": ("#eda100", "^"),
+    "divfl": ("#e87ba4", "v"),
+    "round_robin": ("#008300", "D"),
+    "qffl": ("#e34948", "P"),
+    "propfair": ("#6b6a66", "X"),
 }
+SEQ = matplotlib.colors.LinearSegmentedColormap.from_list(
+    "seq_blue", ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
+DIV = matplotlib.colors.LinearSegmentedColormap.from_list(
+    "deficit", ["#184f95", "#6da7ec", "#f0efec", "#f08a89", "#b3261e"])
 NAMES = {"random": "Random", "round_robin": "Round-Robin", "power_of_choice": "Power-of-Choice",
          "qffl": "q-FFL", "divfl": "DivFL", "propfair": "PropFair",
          "prop_fair": "Proportional", "guarantee": "Guarantee", "ef1": "EF1-Lag"}
@@ -59,9 +63,9 @@ plt.rcParams.update({
 def style(selector, good):
     """Colour, marker, fill, line style and label for a (selector, good_def) pair."""
     if selector in OURS:
-        c = OURS[selector]
+        c, m = OURS[selector]
         weighted = good == "weighted"
-        return {"color": c, "marker": "o", "face": "white" if weighted else c,
+        return {"color": c, "marker": m, "face": "white" if weighted else c,
                 "ls": "--" if weighted else "-",
                 "label": f"{NAMES[selector]} ({'wtd' if weighted else 'cnt'})"}
     c, m = BASELINES.get(selector, ("#999999", "X"))
@@ -150,55 +154,77 @@ def plot_acc_cdf(runs, alpha):
     return fig
 
 
-def plot_participation(run):
-    """Which clients were selected in which round, clients sorted by data size,
-    with total selections per client on the right."""
+def deficit_matrix(run):
+    """Deficit per client after each round (fair share minus times selected so far).
+    Fair share is K*R/N for count and w_i*K*R for weighted."""
     sel = run[KEYS["selected"]]
     sizes = np.asarray(run[KEYS["sizes"]], dtype=float)
-    counts = np.asarray(run[KEYS["counts"]], dtype=float)
     n, rounds, k = sizes.size, len(sel), len(sel[0])
-    rank = np.empty(n, dtype=int)
-    rank[np.argsort(sizes)] = np.arange(n)
+    picks = np.zeros((rounds, n))
+    for r, ids in enumerate(sel):
+        picks[r, ids] = 1
+    share = sizes / sizes.sum() if run[KEYS["good"]] == "weighted" else np.full(n, 1 / n)
+    expected = np.outer(np.arange(1, rounds + 1) * k, share)
+    return (expected - picks.cumsum(0)).T
+
+
+def plot_participation(run):
+    """Selection deficit of every client over rounds, clients sorted by data size,
+    with the final deficit on the right. Red is behind the fair share, blue ahead of it."""
+    d = deficit_matrix(run)
+    order = np.argsort(run[KEYS["sizes"]])
+    d = d[order]
+    lim = np.abs(d).max()
     st = style(run[KEYS["selector"]], run[KEYS["good"]])
-    fig, (ax, side) = plt.subplots(1, 2, figsize=(FULL, 2.4), sharey=True,
-                                   gridspec_kw={"width_ratios": [5, 1], "wspace": 0.04})
-    xs = np.repeat(np.arange(1, rounds + 1), k)
-    ys = rank[np.concatenate(sel)]
-    ax.scatter(xs, ys, s=2.5, marker="s", color=st["color"], lw=0)
+    fig, (ax, side, cax) = plt.subplots(
+        1, 3, figsize=(FULL, 2.5), gridspec_kw={"width_ratios": [6, 1.2, 0.15], "wspace": 0.08})
+    im = ax.imshow(d, aspect="auto", origin="lower", cmap=DIV, vmin=-lim, vmax=lim,
+                   extent=(0.5, d.shape[1] + 0.5, -0.5, d.shape[0] - 0.5), interpolation="nearest")
     ax.grid(False)
-    ax.set_xlim(0.5, rounds + 0.5)
-    ax.set_ylim(-0.5, n - 0.5)
     ax.set_xlabel("Communication round")
     ax.set_ylabel("Client (sorted by data size)")
-    _panel(ax, "a", f"Selected clients per round ({st['label']})")
-    side.barh(rank, counts, height=0.8, color=st["color"], lw=0)
-    side.axvline(k * rounds / n, color=INK, lw=0.8)
+    _panel(ax, "a", f"Selection deficit over rounds ({st['label']})")
+    final = d[:, -1]
+    side.barh(np.arange(d.shape[0]), final, height=0.85, color=DIV((final + lim) / (2 * lim)),
+              lw=0)
+    side.axvline(0, color=INK, lw=0.6)
+    side.set_ylim(-0.5, d.shape[0] - 0.5)
     side.grid(axis="y", visible=False)
-    side.set_xlabel("Times selected")
-    _panel(side, "b", "Total")
     side.tick_params(labelleft=False)
+    side.set_xlabel("Final deficit")
+    _panel(side, "b", "Round 100" if d.shape[1] == 100 else f"Round {d.shape[1]}")
+    cb = fig.colorbar(im, cax=cax)
+    cb.set_label("Fair share minus times selected")
+    cb.outline.set_linewidth(0.5)
     return fig
 
 
 def plot_gate1(run):
-    """Final client accuracy against selection count and data size, with Spearman rho."""
+    """Final client accuracy against selection count and data size, with Spearman rho.
+    Points in (a) are coloured by data size and points in (b) by selection count."""
     acc = np.asarray(run[KEYS["client_acc"]], dtype=float)
-    st = style(run[KEYS["selector"]], run[KEYS["good"]])
-    fig, axes = plt.subplots(1, 2, figsize=(FULL, 2.3), sharey=True)
-    panels = ((axes[0], "counts", "Times selected", "Participation", False),
-              (axes[1], "sizes", "Local training samples", "Data size", True))
-    for (ax, key, xlabel, name, log), letter in zip(panels, "ab"):
-        x = np.asarray(run[KEYS[key]], dtype=float)
+    counts = np.asarray(run[KEYS["counts"]], dtype=float)
+    sizes = np.asarray(run[KEYS["sizes"]], dtype=float)
+    fig, axes = plt.subplots(1, 2, figsize=(FULL, 2.4), sharey=True)
+    panels = ((axes[0], counts, np.log10(sizes), "Times selected", "Participation",
+               r"$\log_{10}$ data size", False),
+              (axes[1], sizes, counts, "Local training samples", "Data size",
+               "Times selected", True))
+    for (ax, x, c, xlabel, name, clabel, log), letter in zip(panels, "ab"):
         rho, p = spearmanr(x, acc)
-        ax.scatter(x, acc, s=12, color=st["color"], lw=0)
+        sc = ax.scatter(x, acc, s=16, c=c, cmap=SEQ, edgecolor=INK, linewidth=0.3)
         if log:
             ax.set_xscale("log")
         ax.set_xlabel(xlabel)
         _panel(ax, letter, name)
         ax.text(0.97, 0.05, rf"$\rho_s = {rho:+.2f}$, $p = {p:.2f}$", transform=ax.transAxes,
-                ha="right", va="bottom", fontsize=7)
+                ha="right", va="bottom", fontsize=7,
+                bbox={"boxstyle": "round,pad=0.25", "fc": "white", "ec": GRID, "lw": 0.5})
+        cb = fig.colorbar(sc, ax=ax, pad=0.02, fraction=0.05)
+        cb.set_label(clabel)
+        cb.outline.set_linewidth(0.5)
     axes[0].set_ylabel("Final client test accuracy")
-    fig.tight_layout(w_pad=1.0)
+    fig.tight_layout(w_pad=0.8)
     return fig
 
 
