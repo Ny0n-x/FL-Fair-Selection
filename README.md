@@ -2,11 +2,10 @@
 FL client selection via fair division
 
 ## Evaluation (metrics/)
-Reads results JSONs in the `results/schema.md` format (`config` holds the run identity).
+Reads results JSONs in the `results/schema.md` format.
 
-    python -m metrics.loader results                  # mean +- std over seeds, one row per method
-    python -m metrics.gate1 results/random_*.json     # Gate 1: Spearman(count, acc), Spearman(size, acc), worst10/mean
-    python -m metrics.plots results --out figures     # histograms, trade-off, selection counts, size breakdown
+    python -m metrics.loader results                  # summary table over seeds
+    python -m metrics.gate1 results/random_*.json     # Gate 1 numbers
+    python -m metrics.plots results --out figures     # report figures
 
-Metric conventions: every client counts once; variance/std are population (ddof=0);
-worst-10% = mean of the lowest ceil(0.1 N) clients; Jain's index is over individual clients.
+Every client counts once. Variance uses ddof=0. Worst-10% is the mean of the lowest 10% of clients.

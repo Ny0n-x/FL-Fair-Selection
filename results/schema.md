@@ -16,4 +16,4 @@ Optional (used by metrics/ when present):
 
 | Field | Type | Meaning |
 |---|---|---|
-| client_acc_rounds | list[list[float]] | per-client test accuracy after each round; enables last-10-round fairness metrics |
+| client_acc_rounds | list[list[float]] | per-client test accuracy after each round, used for last-10-round metrics |

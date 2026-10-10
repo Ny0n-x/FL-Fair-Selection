@@ -1,10 +1,6 @@
-"""Load results JSONs, compute metrics per run, aggregate mean +- std over seeds.
+"""Load results JSONs (results/schema.md) and summarize them over seeds.
 
-Reads the format in results/schema.md: run identity (selector, dataset, alpha, good_def,
-seed) comes from `config`. load_run() maps every file onto the canonical names in KEYS, and
-also accepts the aliases in ALIASES (main.py currently writes `cfg` / `selected_ids`).
-
-Usage: python -m metrics.loader [results_dir] [--out tables/summary.csv]
+Usage: python -m metrics.loader [results_dir] [--out summary.csv]
 """
 import argparse
 import glob
@@ -35,18 +31,17 @@ IDENTITY = ("selector", "dataset", "alpha", "good", "seed")
 OPTIONAL = ("client_acc_rounds",)
 GROUP = ["selector", "dataset", "alpha", "good"]
 LAST = 10
-# Rounds-to-target: target = TARGET_FRAC * Random's last-10-round global accuracy for the same
-# (dataset, alpha), averaged over seeds. Shared target, so methods are compared on one bar.
+# Target accuracy = TARGET_FRAC * Random's last-10-round accuracy, per (dataset, alpha).
 REFERENCE, TARGET_FRAC, SMOOTH = "random", 0.9, 5
 
 
 def load_run(path):
-    """Read one results JSON and return it with canonical key names (see KEYS)."""
+    """Read one results JSON and return it with the key names in KEYS."""
     with open(path) as f:
         raw = json.load(f)
     cfg = raw.get("config") or raw.get("cfg") or {}
     r = dict(raw)
-    for k in IDENTITY:  # identity lives in config; a top-level value also counts
+    for k in IDENTITY:  # read from config unless set at top level
         name = KEYS[k]
         if name not in r and name in cfg:
             r[name] = cfg[name]
@@ -64,7 +59,7 @@ def load_run(path):
 
 
 def run_metrics(r):
-    """Per-run row: final-round metrics plus last-10-round means where the data allows."""
+    """Metrics for one run: final round, plus last-10-round means if available."""
     row = {k: r[KEYS[k]] for k in ("selector", "dataset", "alpha", "good", "seed")}
     g = np.asarray(r[KEYS["global_acc"]], dtype=float)
     row["global_acc_final"] = float(g[-1])
@@ -82,8 +77,7 @@ def run_metrics(r):
 
 
 def add_rounds_to_target(df):
-    """Adds target_acc and rounds_to_target. Runs that never reach the target get NaN,
-    so check n_reached in the summary before reading a mean."""
+    """Add rounds_to_target. Runs that never reach the target get NaN."""
     ref = (df[df["selector"] == REFERENCE].groupby(["dataset", "alpha"])["global_acc_last10"]
            .mean() * TARGET_FRAC)
     df["target_acc"] = [ref.get((d, a), np.nan) for d, a in zip(df["dataset"], df["alpha"])]
@@ -104,7 +98,7 @@ def load_dir(results_dir="results"):
 
 
 def summarize(df):
-    """mean and std over seeds for each (selector, dataset, alpha, good) cell."""
+    """Mean and std over seeds per (selector, dataset, alpha, good)."""
     metric_cols = [c for c in df.columns if c not in GROUP + ["seed", "reached_target"]]
     agg = df.groupby(GROUP)[metric_cols].agg(["mean", "std"])
     agg.columns = [f"{m}_{s}" for m, s in agg.columns]
@@ -114,9 +108,8 @@ def summarize(df):
 
 
 def size_breakdown(runs, n_buckets=4):
-    """Per-client accuracy and selection count by data-size bucket (0 = smallest clients).
-    Buckets are formed within each run, since partitions differ across seeds.
-    Returns one row per (method, alpha, bucket): mean +- std over seeds."""
+    """Mean accuracy and selection count per data-size bucket, averaged over seeds.
+    Buckets are built per run because partitions change with the seed."""
     rows = []
     for r in runs:
         sizes = np.asarray(r[KEYS["sizes"]], dtype=float)
@@ -138,7 +131,7 @@ def size_breakdown(runs, n_buckets=4):
 
 
 def fmt_table(summary, cols):
-    """Readable 'mean +- std' table for the given metric names."""
+    """Format the given metrics as mean +- std strings."""
     out = summary[GROUP + ["n_seeds"]].copy()
     for c in cols:
         out[c] = [f"{m:.4f} +- {s:.4f}" if not np.isnan(s) else f"{m:.4f}"

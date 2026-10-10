@@ -1,12 +1,7 @@
-"""Fairness metrics over per-client accuracies and selection counts.
+"""Fairness metrics over per-client accuracy and selection counts.
 
-Conventions (agree these with the team before results come in):
-- Every client counts once (unweighted). That is the individual-fairness notion we use.
-  Jain's index here is over individual clients, not demographic groups (FairFed's notion).
-- Accuracies can be fractions in [0, 1] or percentages. Jain, CV and entropy do not depend on
-  the scale; variance, std, min and worst-10% do, so report them in percentage points.
-- Variance and std are population (ddof=0) values over the N clients.
-- Worst-10% is the mean of the lowest ceil(0.1 * N) clients (N=50 -> 5 clients).
+Every client counts once. Variance and std use ddof=0.
+Worst-10% is the mean of the lowest ceil(0.1 * N) clients.
 """
 import math
 
@@ -23,14 +18,14 @@ def _arr(x):
 
 
 def jain_index(x):
-    """(sum x)^2 / (n * sum x^2), in [1/n, 1]; 1 means all clients equal."""
+    """(sum x)^2 / (n * sum x^2). Ranges from 1/n to 1, where 1 means all equal."""
     a = _arr(x)
     denom = a.size * np.sum(a ** 2)
     return 1.0 if denom == 0 else float(np.sum(a) ** 2 / denom)
 
 
 def coeff_variation(x):
-    """std / mean (population std)."""
+    """std / mean."""
     a = _arr(x)
     m = a.mean()
     return float("nan") if m == 0 else float(a.std(ddof=0) / m)
@@ -52,7 +47,7 @@ def worst_frac_mean(x, frac=0.1):
 
 
 def entropy_normalized(x):
-    """Shannon entropy (nats) of x / sum(x). Maximum is log(n) when all clients are equal."""
+    """Entropy (nats) of x / sum(x). Max is log(n)."""
     a = _arr(x)
     if (a < 0).any():
         raise ValueError("entropy needs non-negative values")
@@ -64,12 +59,12 @@ def entropy_normalized(x):
 
 
 def selection_freq_variance(selection_counts):
-    """Population variance of per-client selection counts (participation fairness)."""
+    """Variance of per-client selection counts."""
     return variance(selection_counts)
 
 
 def outcome_metrics(client_acc):
-    """All outcome-fairness metrics for one vector of per-client accuracies."""
+    """All outcome metrics for one vector of per-client accuracies."""
     a = _arr(client_acc)
     return {
         "mean_client_acc": float(a.mean()),
@@ -84,8 +79,8 @@ def outcome_metrics(client_acc):
 
 
 def rounds_to_target(global_acc, target, smooth=5):
-    """First round (1-based) where the trailing `smooth`-round mean of global accuracy
-    reaches `target`; None if it never does. Smoothing stops one lucky round from counting."""
+    """First round (1-based) where the `smooth`-round moving average reaches `target`.
+    Returns None if it never does."""
     a = _arr(global_acc)
     w = max(1, min(smooth, a.size))
     ma = np.convolve(a, np.ones(w) / w, mode="valid")  # ma[j] covers rounds j+1 .. j+w
@@ -94,8 +89,7 @@ def rounds_to_target(global_acc, target, smooth=5):
 
 
 def size_buckets(data_sizes, n_buckets=4):
-    """Bucket index per client (0 = smallest data), equal-count buckets by data-size rank.
-    Ties are broken by client id, so with near-equal sizes the buckets carry no meaning."""
+    """Equal-count bucket index per client by data size. 0 holds the smallest clients."""
     sizes = _arr(data_sizes)
     b = np.empty(sizes.size, dtype=int)
     for i, idx in enumerate(np.array_split(np.argsort(sizes, kind="stable"), n_buckets)):

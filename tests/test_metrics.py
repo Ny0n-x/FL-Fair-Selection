@@ -5,7 +5,7 @@ import pytest
 
 from metrics.metrics import (
     coeff_variation, entropy_normalized, jain_index, min_acc, outcome_metrics,
-    selection_freq_variance, variance, worst_frac_mean,
+    rounds_to_target, selection_freq_variance, size_buckets, variance, worst_frac_mean,
 )
 
 
@@ -79,8 +79,6 @@ def test_outcome_metrics_keys():
                       "jain", "cv", "entropy"}
 
 
-from metrics.metrics import rounds_to_target, size_buckets  # noqa: E402
-
 
 def test_rounds_to_target_no_smoothing():
     assert rounds_to_target([0.1, 0.3, 0.5, 0.7], 0.5, smooth=1) == 3
@@ -89,7 +87,7 @@ def test_rounds_to_target_no_smoothing():
 def test_rounds_to_target_smoothing_ignores_spike():
     acc = [0.1, 0.9, 0.1, 0.1, 0.6, 0.6, 0.6]
     assert rounds_to_target(acc, 0.5, smooth=1) == 2
-    # trailing 3-round means end at rounds 3..7: .367 .367 .267 .433 .6
+    # 3-round averages ending at rounds 3 to 7: .367 .367 .267 .433 .6
     assert rounds_to_target(acc, 0.5, smooth=3) == 7
 
 

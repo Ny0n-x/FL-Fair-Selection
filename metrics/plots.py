@@ -1,11 +1,7 @@
-"""Report figures. Notebooks import these; no training logic here.
+"""Report figures.
 
-Encoding (fixed per method, so a method looks the same in every figure):
-- Our rules get colour: prop_fair = blue, guarantee = orange, ef1 = aqua.
-  good_def=count is a filled marker, weighted is a hollow marker of the same colour.
-- Baselines are neutral grays, told apart by marker shape and direct labels.
-Palette checked with the dataviz validator (light mode, all pairs): passes CVD and
-normal-vision floors; aqua is below 3:1 contrast, so points are always direct-labelled.
+Our rules are coloured (prop_fair blue, guarantee orange, ef1 aqua). Filled markers are
+count-based, hollow ones weighted. Baselines are gray with distinct markers.
 
 Usage: python -m metrics.plots [results_dir] [--out figures] [--alpha 0.1] [--seed 0]
 """
@@ -38,7 +34,7 @@ NAMES = {"random": "Random", "round_robin": "Round-Robin", "power_of_choice": "P
 
 
 def style(selector, good):
-    """Colour, marker, fill and label for one (selector, good_def) method."""
+    """Colour, marker, fill and label for a (selector, good_def) pair."""
     if selector in OURS:
         c = OURS[selector]
         return {"color": c, "marker": "o",
@@ -68,7 +64,7 @@ def _fig(nrows, ncols, w, h, **kw):
 
 
 def _method_order(keys):
-    """Baselines first in a fixed order, then ours; count before weighted."""
+    """Baselines first, then our rules. Count before weighted."""
     rank = list(BASELINES) + list(OURS)
     return sorted(keys, key=lambda k: (rank.index(k[0]) if k[0] in rank else 99, k[1]))
 
@@ -78,8 +74,8 @@ def load_raw(results_dir):
 
 
 def plot_client_acc_hist(runs, alpha, bins=20):
-    """One panel per method at a given alpha: per-client final accuracy, pooled over seeds.
-    Solid line = mean client accuracy, dotted = worst-10% mean."""
+    """Per-client accuracy histogram per method, pooled over seeds.
+    Solid line is the mean, dotted line the worst-10% mean."""
     groups = {}
     for r in runs:
         if r[KEYS["alpha"]] == alpha:
@@ -108,8 +104,7 @@ def plot_client_acc_hist(runs, alpha, bins=20):
 
 
 def _direct_labels(ax, pts, gap_px=11):
-    """Label points to their right, pushing labels down when they would overlap
-    (a simple greedy pass in display space; good enough for <= 10 methods)."""
+    """Label points on the right and push overlapping labels down."""
     fig = ax.figure
     fig.canvas.draw()
     disp = [(ax.transData.transform((x, y)), lab) for x, y, lab in pts]
@@ -129,8 +124,7 @@ def _direct_labels(ax, pts, gap_px=11):
 
 
 def plot_tradeoff(summary, y="worst10_mean_final", x="global_acc_final", ylabel=None):
-    """One panel per alpha: average accuracy (x) vs a fairness metric (y), mean +- std
-    over seeds. Each point is direct-labelled."""
+    """Accuracy vs a fairness metric, one panel per alpha, mean +- std over seeds."""
     alphas = sorted(summary["alpha"].unique())
     fig, axes = _fig(1, len(alphas), 4.2 * len(alphas), 3.8)
     for ax, a in zip(axes[0], alphas):
@@ -158,8 +152,8 @@ def plot_tradeoff(summary, y="worst10_mean_final", x="global_acc_final", ylabel=
 
 
 def plot_selection_counts(runs, alpha, seed):
-    """One panel per method: selection count per client, clients sorted by data size.
-    Overlays the fair-share line for that run's good_def: K*R/N (count) or w_i*K*R (weighted)."""
+    """Selection count per client, sorted by data size, with the fair-share line.
+    Fair share is K*R/N for count and w_i*K*R for weighted."""
     picked = {(r[KEYS["selector"]], r[KEYS["good"]]): r for r in runs
               if r[KEYS["alpha"]] == alpha and r[KEYS["seed"]] == seed}
     keys = _method_order(picked)
@@ -183,7 +177,7 @@ def plot_selection_counts(runs, alpha, seed):
         ax.set_xlim(-0.6, n - 0.4)
         ax.set_xticks([])
         ax.set_ylabel("times selected", fontsize=8, color=TEXT2)
-    axes[-1, 0].set_xlabel("clients, sorted by data size (small -> large); line = fair share",
+    axes[-1, 0].set_xlabel("clients sorted by data size (small to large), line is fair share",
                            fontsize=9, color=TEXT2)
     fig.suptitle(f"Selection counts, alpha = {alpha:g}, seed {seed}", fontsize=10, color=TEXT,
                  x=0.02, ha="left")
@@ -192,9 +186,7 @@ def plot_selection_counts(runs, alpha, seed):
 
 
 def plot_size_breakdown(bd):
-    """Columns = alpha. Top row: mean client accuracy per data-size bucket. Bottom row: mean
-    selection count per bucket (shows whether weighted rules starve small clients).
-    Mean +- std over seeds; the numbers are in the size_breakdown table."""
+    """Accuracy (top) and selection count (bottom) per data-size bucket, one column per alpha."""
     alphas = sorted(bd["alpha"].unique())
     nb = int(bd["bucket"].max()) + 1
     fig, axes = _fig(2, len(alphas), 4 * len(alphas), 5.6, sharex=True)

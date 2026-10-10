@@ -1,12 +1,9 @@
-"""Gate 1 diagnostic on Random runs (Person C makes the go/no-go call).
+"""Gate 1 diagnostic for Random runs.
 
-For each run prints:
-  (a) Spearman(selection count, final client accuracy)
-  (b) Spearman(data size, final client accuracy)
-  (c) worst-10% mean accuracy / mean client accuracy
-With N=50 a Spearman rho needs |rho| > ~0.28 for p < 0.05, so read rho together with p.
+Prints Spearman(count, acc), Spearman(size, acc) and worst-10% / mean per run.
+With N=50, |rho| needs to be above about 0.28 for p < 0.05.
 
-Usage: python -m metrics.gate1 results/random_cifar10_0.1_count_0.json [more files ...]
+Usage: python -m metrics.gate1 results/random_*.json
 """
 import argparse
 
