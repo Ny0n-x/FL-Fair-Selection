@@ -1,0 +1,13 @@
+dataset: cifar10
+alpha: 0.1
+n_clients: 50
+k: 10
+rounds: 100
+local_epochs: 2
+lr: 0.01        # tune once on Random, then freeze
+seed: 0
+selector: random
+good_def: count # count | weighted
+T: 10
+M: 1
+eps: 0.1
