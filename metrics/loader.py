@@ -25,10 +25,11 @@ KEYS = {
     "client_acc_rounds": "client_acc_rounds",  # optional: list[list[float]], one per round
     "counts": "selection_counts",            # list[int], length N
     "sizes": "data_sizes",                   # list[int], length N
+    "queried": "queried_per_round",          # optional: list[int], one per round
 }
 ALIASES = {"selected": ["selected_ids"], "client_acc": ["client_acc_final"]}
 IDENTITY = ("selector", "dataset", "alpha", "good", "seed")
-OPTIONAL = ("client_acc_rounds",)
+OPTIONAL = ("client_acc_rounds", "queried")
 GROUP = ["selector", "dataset", "alpha", "good"]
 LAST = 10
 # Target accuracy = TARGET_FRAC * Random's last-10-round accuracy, per (dataset, alpha).
@@ -58,6 +59,17 @@ def load_run(path):
     return r
 
 
+def queries_per_round(r):
+    """Mean number of extra client queries per round. Uses queried_per_round if present,
+    else the run total `extra_queries` that main.py writes. NaN if neither is there."""
+    q = r.get(KEYS["queried"])
+    if q:
+        return float(np.mean(q))
+    if "extra_queries" in r:
+        return float(r["extra_queries"]) / len(r[KEYS["global_acc"]])
+    return float("nan")
+
+
 def run_metrics(r):
     """Metrics for one run: final round, plus last-10-round means if available."""
     row = {k: r[KEYS[k]] for k in ("selector", "dataset", "alpha", "good", "seed")}
@@ -72,6 +84,7 @@ def run_metrics(r):
         for k in tail[0]:
             row[f"{k}_last10"] = float(np.mean([t[k] for t in tail]))
     row["sel_freq_var"] = selection_freq_variance(r[KEYS["counts"]])
+    row["queries_per_round"] = queries_per_round(r)
     row["_global_acc"] = g
     return row
 
@@ -146,7 +159,7 @@ def main():
     a = ap.parse_args()
     s = summarize(load_dir(a.results_dir))
     cols = ["global_acc_final", "worst10_mean_final", "min_final", "variance_final",
-            "jain_final", "cv_final", "sel_freq_var", "rounds_to_target"]
+            "jain_final", "cv_final", "sel_freq_var", "queries_per_round", "rounds_to_target"]
     t = fmt_table(s, cols)
     t["n_reached"] = s["n_reached"]
     print(t.to_string(index=False))
