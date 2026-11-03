@@ -14,7 +14,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-from scipy.stats import spearmanr  # noqa: E402
+import pandas as pd  # noqa: E402
+from scipy.stats import norm, spearmanr  # noqa: E402
+
+from metrics.gate1 import FHP, gate1, pool  # noqa: E402
 
 from metrics.loader import KEYS, load_dir, load_run, size_breakdown, summarize  # noqa: E402
 from metrics.metrics import worst_frac_mean  # noqa: E402
@@ -228,6 +231,39 @@ def plot_gate1(run):
     return fig
 
 
+def plot_gate1_seeds(per_run, pooled):
+    """Spearman rho per seed (dots) and pooled over seeds (marker, 95% CI), one row per alpha.
+    The grey band is where a single run is not significant at p = 0.05."""
+    fig, axes = plt.subplots(1, 2, figsize=(FULL, 0.5 + 0.45 * max(2, len(pooled))),
+                             sharey=True)
+    st = style("random", "count")
+    labels = [rf"$\alpha = {a:g}$" for a in pooled["alpha"]]
+    if pooled["dataset"].nunique() > 1:
+        labels = [f"{d}, {lab}" for d, lab in zip(pooled["dataset"], labels)]
+    for ax, (name, title), letter in zip(axes, (("count", "Participation"),
+                                                ("size", "Data size")), "ab"):
+        for y, row in enumerate(pooled.itertuples()):
+            g = per_run[(per_run["dataset"] == row.dataset) & (per_run["alpha"] == row.alpha)]
+            jit = np.linspace(-0.12, 0.12, len(g)) if len(g) > 1 else np.zeros(1)
+            ax.scatter(g[f"rho_{name}_acc"], y + jit, s=9, color=st["color"], alpha=0.45,
+                       lw=0, zorder=2)
+            rho, lo, hi = (getattr(row, f"rho_{name}{s}") for s in ("", "_lo", "_hi"))
+            ax.errorbar(rho, y, xerr=[[rho - lo], [hi - rho]], fmt="D", ms=4.5,
+                        mfc=st["color"], mec=INK, mew=0.5, ecolor=INK, elinewidth=0.9,
+                        capsize=2, zorder=3)
+        crit = np.tanh(norm.ppf(0.975) * np.sqrt(FHP / (pooled["n_clients"].min() - 3)))
+        ax.axvspan(-crit, crit, color=GRID, alpha=0.7, lw=0, zorder=0)
+        ax.axvline(0, color=INK2, lw=0.6, zorder=1)
+        ax.set_xlim(-1, 1)
+        ax.set_xlabel(r"Spearman $\rho_s$ with final client accuracy")
+        ax.grid(axis="y", visible=False)
+        _panel(ax, letter, title)
+    axes[0].set_yticks(range(len(pooled)), labels)
+    axes[0].set_ylim(len(pooled) - 0.5, -0.5)
+    fig.tight_layout(w_pad=0.8)
+    return fig
+
+
 def plot_tradeoff(summary, y="worst10_mean_final", x="global_acc_final", ylabel=None):
     """Global accuracy against a fairness metric, one panel per alpha, mean +- std."""
     alphas = sorted(summary["alpha"].unique())
@@ -324,6 +360,10 @@ def main():
             save(plot_selection_counts(r), a.out, f"selection_counts_{name}")
             if r[KEYS["selector"]] == "random":
                 save(plot_gate1(r), a.out, f"gate1_{tag}_seed{a.seed}")
+    rnd = [gate1(r) for r in runs if r[KEYS["selector"]] == "random"]
+    if rnd:
+        per_run = pd.DataFrame(rnd)
+        save(plot_gate1_seeds(per_run, pool(per_run)), a.out, "gate1_seeds")
     summary = summarize(load_dir(a.results_dir))
     if summary["selector"].nunique() > 1:
         save(plot_tradeoff(summary, ylabel="Worst-10% client accuracy"), a.out, "tradeoff_worst10")
