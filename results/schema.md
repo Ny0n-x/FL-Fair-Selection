@@ -17,3 +17,6 @@ Optional (used by metrics/ when present):
 | Field | Type | Meaning |
 |---|---|---|
 | client_acc_rounds | list[list[float]] | per-client test accuracy after each round, used for last-10-round metrics |
+
+The loader also accepts the names main.py used before: `cfg` for `config`, `selected_ids` for
+`selected`, and a run total `extra_queries` in place of `queried_per_round`.
