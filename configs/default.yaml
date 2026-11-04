@@ -4,6 +4,7 @@ n_clients: 50
 k: 10
 rounds: 100
 local_epochs: 2
+batch_size: 32   # not set before; main.py needs it
 lr: 0.01        # tune once on Random, then freeze
 seed: 0
 selector: random

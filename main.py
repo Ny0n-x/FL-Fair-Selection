@@ -119,8 +119,8 @@ def run(cfg):
     selector = registry[cfg["selector"]](n, k, sizes, cfg)
 
     glob = CNN().to(DEV)
-    Xt, yt = torch.cat([t[0] for t in test]), torch.cat([t[1] for t in test])
-    counts, sel_log, acc_log = [0] * n, [], []
+    n_test = [len(t[0]) for t in test]
+    counts, sel_log, acc_log, client_log, query_log = [0] * n, [], [], [], []
 
     def loss_fn(ids):
         return [evaluate(glob, *train[i])[0] for i in ids]
@@ -148,17 +148,24 @@ def run(cfg):
                               for kk in states[0]})
         selector.update(r, chosen, ctx)
         sel_log.append(chosen)
-        acc_log.append(evaluate(glob, Xt, yt)[1])
+        q = int(getattr(selector, "extra_queries", 0))
+        query_log.append(q - sum(query_log))
+        # global acc on the union of client test splits = test-size-weighted client acc
+        accs = [evaluate(glob, *test[i])[1] for i in range(n)]
+        client_log.append(accs)
+        acc_log.append(sum(a * m for a, m in zip(accs, n_test)) / sum(n_test))
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
 
     out = {
         "cfg": {kk: v for kk, v in cfg.items()},
         "selected_ids": sel_log,
         "global_acc": acc_log,                   # on the union of client test splits
-        "client_acc": [evaluate(glob, *test[i])[1] for i in range(n)],
+        "client_acc": client_log[-1],            # final per-client accuracy
+        "client_acc_rounds": client_log,         # per-client accuracy after each round
         "selection_counts": counts,
         "data_sizes": sizes,
-        "extra_queries": int(getattr(selector, "extra_queries", 0)),
+        "queried_per_round": query_log,          # extra client queries in each round
+        "extra_queries": sum(query_log),
     }
     os.makedirs("results", exist_ok=True)
     path = f"results/{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}.json"
