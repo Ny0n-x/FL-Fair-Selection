@@ -1,0 +1,10 @@
+% cifar10, alpha=0.5, seeds per method: 3. Mean +- std over seeds. Dagger: paired ttest vs Random, p < 0.05.
+\begin{tabular}{lccccccc}
+\toprule
+Method & Global acc. $\uparrow$ & Worst-10\% $\uparrow$ & Min $\uparrow$ & Jain $\uparrow$ & Var. $\downarrow$ & Sel. var. $\downarrow$ & Rounds $\downarrow$ \\
+\midrule
+Random & 0.662 $\pm$ 0.005 & \textbf{0.530 $\pm$ 0.032} & \textbf{0.490 $\pm$ 0.044} & \textbf{0.989 $\pm$ 0.004} & 0.005 $\pm$ 0.002 & 15.853 $\pm$ 2.730 & \textbf{36.0 $\pm$ 1.0} \\
+Guarantee & \textbf{0.663 $\pm$ 0.009} & 0.525 $\pm$ 0.034 & 0.482 $\pm$ 0.032 & \textbf{0.989 $\pm$ 0.003} & \textbf{0.005 $\pm$ 0.001} & \textbf{0.680 $\pm$ 0.069}$^\dagger$ & 36.3 $\pm$ 1.5 \\
+Power-of-Choice & 0.640 $\pm$ 0.020 & 0.484 $\pm$ 0.029 & 0.391 $\pm$ 0.086 & 0.982 $\pm$ 0.006$^\dagger$ & 0.008 $\pm$ 0.002$^\dagger$ & 36.760 $\pm$ 14.760 & 42.0 $\pm$ 5.2 \\
+\bottomrule
+\end{tabular}
