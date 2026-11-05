@@ -11,3 +11,12 @@ One file per run: `results/{selector}_{dataset}_{alpha}_{good}_{seed}.json`
 | data_sizes | list[int] | local data size of each client |
 | queried_per_round | list[int] | number of clients whose loss was queried each round |
 | config | dict | the full config used for the run |
+
+Optional (used by metrics/ when present):
+
+| Field | Type | Meaning |
+|---|---|---|
+| client_acc_rounds | list[list[float]] | per-client test accuracy after each round, used for last-10-round metrics |
+
+The loader also accepts the names main.py used before: `cfg` for `config`, `selected_ids` for
+`selected`, and a run total `extra_queries` in place of `queried_per_round`.
