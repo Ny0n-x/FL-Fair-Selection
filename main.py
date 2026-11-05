@@ -15,36 +15,22 @@ import yaml
 from torchvision import datasets
 
 from baselines import REGISTRY
+from data.partition import get_partition
+from selection import REGISTRY as TEAM
 
 DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ---------------- data (stub; swap for Person A's get_partition) ----------------
 def load_partition(cfg):
-    """Returns train, test (lists of (X, y) per client). Replace with data.partition
-    once Person A's version is merged, adapting its index output to tensors."""
-    alpha, n, seed = cfg["alpha"], cfg["n_clients"], cfg["seed"]
-    rng = np.random.default_rng(seed)
-    ds = datasets.CIFAR10("data", train=True, download=True)
+    """Suresh's index partition -> per-client (X, y) tensors."""
+    ds = datasets.CIFAR10("data/raw", train=True, download=True)
     X = (torch.tensor(ds.data).permute(0, 3, 1, 2).float() / 255 - 0.5) / 0.5
-    y = np.array(ds.targets)
-    for _ in range(100):                       # resample until every client has >= 10 samples
-        idx = [[] for _ in range(n)]
-        for c in range(10):
-            ids = rng.permutation(np.where(y == c)[0])
-            p = rng.dirichlet([alpha] * n)
-            cuts = (np.cumsum(p) * len(ids)).astype(int)[:-1]
-            for i, part in enumerate(np.split(ids, cuts)):
-                idx[i] += part.tolist()
-        if min(len(i) for i in idx) >= 10:
-            break
-    else:
-        raise RuntimeError("could not build a partition with min client size 10")
-    yt = torch.tensor(y)
-    train, test = [], []
-    for i in range(n):
-        ids = rng.permutation(idx[i]); s = int(0.8 * len(ids))
-        train.append((X[ids[:s]], yt[ids[:s]])); test.append((X[ids[s:]], yt[ids[s:]]))
+    y = torch.tensor(ds.targets)
+    part = get_partition(cfg["dataset"], cfg["alpha"], cfg["n_clients"], cfg["seed"],
+                         labels=y.numpy())
+    train = [(X[torch.from_numpy(i)], y[torch.from_numpy(i)]) for i in part["train"]]
+    test = [(X[torch.from_numpy(i)], y[torch.from_numpy(i)]) for i in part["test"]]
     return train, test
 
 
@@ -108,12 +94,7 @@ def run(cfg):
     n, k = cfg["n_clients"], cfg["k"]
     sizes = [len(t[0]) for t in train]
 
-    registry = dict(REGISTRY)
-    try:                                         # pick up Rahul's selectors if registered
-        from selection import REGISTRY as TEAM
-        registry.update(TEAM)
-    except Exception:
-        pass
+    registry = {**REGISTRY, **TEAM}
     if cfg["selector"] not in registry:
         raise KeyError(f"unknown selector {cfg['selector']}; have {list(registry)}")
     selector = registry[cfg["selector"]](n, k, sizes, cfg)
@@ -169,7 +150,10 @@ def run(cfg):
     }
     os.makedirs("results", exist_ok=True)
     path = f"results/{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}.json"
-    json.dump(out, open(path, "w"))
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(out, f)
+    os.replace(tmp, path)
     print("wrote", path)
 
 
@@ -178,7 +162,7 @@ if __name__ == "__main__":
     ap.add_argument("--config", default="configs/default.yaml")
     for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
-                      ("good_def", str), ("local_epochs", int)]:
+                      ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
