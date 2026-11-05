@@ -4,10 +4,12 @@ n_clients: 50
 k: 10
 rounds: 100
 local_epochs: 2
+batch_size: 32   # not set before; main.py needs it
 lr: 0.01        # tune once on Random, then freeze
 seed: 0
 selector: random
 good_def: count # count | weighted
+d: null               # Power-of-Choice candidate set size (null -> 2*k)
 T: 10
 M: 1
 eps: 0.1

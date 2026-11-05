@@ -1,6 +1,15 @@
 # FL-Fair-Selection
 FL client selection via fair division
 
+## Running
+
+    python main.py --rounds 5                  # random, default config (100 rounds)
+    python main.py --selector power_of_choice
+    python main.py --selector divfl --alpha 0.5 --seed 1
+    python main.py --selector guarantee --alpha 0.1 --seed 0
+
+Defaults are in `configs/default.yaml`; command-line flags override them.
+
 ## Evaluation (metrics/)
 Reads results JSONs in the `results/schema.md` format.
 
@@ -26,3 +35,4 @@ Finished runs (their results JSON exists) are skipped, so rerunning resumes. Sel
 ignore good_def run once. Logs go to results/logs/.
 
 Every client counts once. Variance uses ddof=0. Worst-10% is the mean of the lowest 10% of clients.
+>>>>>>> origin/main
