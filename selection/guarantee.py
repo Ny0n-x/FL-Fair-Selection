@@ -37,10 +37,13 @@ class GuaranteeSelector(Selector):
             c = int(c)
             if c in S:
                 continue
-            worst = max(S, key=lambda i: d[i])
-            trial = [x for x in S if x != worst] + [c]
-            if self._feasible_after(trial):
-                S = trial
+            for w in sorted(S, key=lambda i: pri[i]):  # lowest priority first
+                if pri[w] >= pri[c]:
+                    break  # nobody left that c beats
+                trial = [x for x in S if x != w] + [c]
+                if self._feasible_after(trial):
+                    S = trial
+                    break
         return S
 
     def update(self, round_idx, selected, ctx):
