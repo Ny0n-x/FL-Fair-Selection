@@ -32,3 +32,13 @@ def test_adversarial_filler():
 def test_tight_small_case():
     losses = {i: float(i == 0) for i in range(6)}
     assert max_gap(6, 2, 3, 500, losses) <= 3
+
+def test_loss_filler_picks_top_k_in_round_one():
+    n, k = 50, 10
+    losses = np.random.default_rng(0).random(n)
+
+    class Ctx:
+        loss_fn = staticmethod(lambda ids: losses[list(ids)])
+
+    sel = GuaranteeSelector(n, k, [1] * n, {"T": 10, "filler": "loss", "seed": 0})
+    assert set(sel.select(0, Ctx())) == set(np.argsort(-losses)[:k].tolist())
