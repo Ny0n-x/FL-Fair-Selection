@@ -35,4 +35,3 @@ Finished runs (their results JSON exists) are skipped, so rerunning resumes. Sel
 ignore good_def run once. Logs go to results/logs/.
 
 Every client counts once. Variance uses ddof=0. Worst-10% is the mean of the lowest 10% of clients.
->>>>>>> origin/main

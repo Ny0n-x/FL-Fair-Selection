@@ -29,8 +29,9 @@ def load_partition(cfg):
     y = torch.tensor(ds.targets)
     part = get_partition(cfg["dataset"], cfg["alpha"], cfg["n_clients"], cfg["seed"],
                          labels=y.numpy())
-    train = [(X[torch.from_numpy(i)], y[torch.from_numpy(i)]) for i in part["train"]]
-    test = [(X[torch.from_numpy(i)], y[torch.from_numpy(i)]) for i in part["test"]]
+    X, y = X.to(DEV), y.to(DEV)   # CIFAR-10 is ~600 MB; keep it on the GPU, not per batch
+    train = [(X[torch.from_numpy(i).to(DEV)], y[torch.from_numpy(i).to(DEV)]) for i in part["train"]]
+    test = [(X[torch.from_numpy(i).to(DEV)], y[torch.from_numpy(i).to(DEV)]) for i in part["test"]]
     return train, test
 
 
