@@ -1,1 +1,1 @@
-a8b5c3b Fix the Colab notebook to run the current code on GPU
+fd3ce43 Run 300 rounds with checkpoints so a Colab disconnect does not lose runs
