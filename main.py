@@ -6,6 +6,10 @@ Usage:
     python main.py --selector power_of_choice --alpha 0.5 --seed 1
     python main.py --rounds 5                        # quick smoke test
 
+Every --ckpt_every rounds (default 10) the run state is saved to results/ckpt/. If the process
+dies, running the same command again resumes from the last checkpoint instead of round 0. The
+checkpoint is deleted once the results JSON is written.
+
 Later, move the loop into fl/train.py and keep this as a thin wrapper.
 """
 import argparse, copy, json, os, random
@@ -88,8 +92,45 @@ class Ctx:
         self.updates = {}        # {client_id: update vector} for clients trained this round
 
 
+# ---------------- checkpoints ----------------
+def rng_state():
+    return {"py": random.getstate(), "np": np.random.get_state(), "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None}
+
+
+def set_rng_state(s):
+    random.setstate(s["py"]); np.random.set_state(s["np"]); torch.set_rng_state(s["torch"])
+    if s["cuda"] is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(s["cuda"])
+
+
+def save_ckpt(path, state):
+    """Write to a temp file and rename, so a crash mid-write never leaves a broken checkpoint."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(state, path + ".tmp")
+    os.replace(path + ".tmp", path)
+
+
+def load_ckpt(path, cfg):
+    """The saved state if there is a usable checkpoint for exactly this cfg, else None."""
+    if not os.path.exists(path):
+        return None
+    try:
+        state = torch.load(path, map_location=DEV, weights_only=False)
+    except Exception as e:  # e.g. truncated by a disconnect
+        print(f"ignoring unreadable checkpoint {path}: {e}", flush=True)
+        return None
+    if state["cfg"] != cfg:
+        print(f"ignoring checkpoint {path}: it was made with a different config", flush=True)
+        return None
+    return state
+
+
 # ---------------- main ----------------
 def run(cfg):
+    ckpt_every = cfg.pop("ckpt_every", None) or 10   # not part of the experiment, keep out of cfg
+    name = f"{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}"
+    path, ckpt_path = f"results/{name}.json", f"results/ckpt/{name}.pt"
     random.seed(cfg["seed"]); np.random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
     train, test = load_partition(cfg)
     n, k = cfg["n_clients"], cfg["k"]
@@ -114,7 +155,17 @@ def run(cfg):
             out.append((flat(m) - flat(glob)).numpy())
         return out
 
-    for r in range(cfg["rounds"]):
+    start = 0
+    state = load_ckpt(ckpt_path, cfg)
+    if state is not None:
+        glob.load_state_dict(state["model"])
+        selector = state["selector"]
+        counts, sel_log, acc_log, client_log, query_log = state["logs"]
+        set_rng_state(state["rng"])
+        start = state["round"]
+        print(f"resuming from {ckpt_path} at round {start}", flush=True)
+
+    for r in range(start, cfg["rounds"]):
         ctx = Ctx(); ctx.loss_fn, ctx.update_fn = loss_fn, update_fn
         chosen = [int(i) for i in selector.select(r, ctx)]
         assert len(set(chosen)) == k, f"selector returned {len(chosen)} ids, expected {k} distinct"
@@ -137,6 +188,10 @@ def run(cfg):
         client_log.append(accs)
         acc_log.append(sum(a * m for a, m in zip(accs, n_test)) / sum(n_test))
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
+        if (r + 1) % ckpt_every == 0 and r + 1 < cfg["rounds"]:
+            save_ckpt(ckpt_path, {"cfg": cfg, "round": r + 1, "model": glob.state_dict(),
+                                  "selector": selector, "rng": rng_state(),
+                                  "logs": (counts, sel_log, acc_log, client_log, query_log)})
 
     out = {
         "cfg": {kk: v for kk, v in cfg.items()},
@@ -150,11 +205,12 @@ def run(cfg):
         "extra_queries": sum(query_log),
     }
     os.makedirs("results", exist_ok=True)
-    path = f"results/{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}.json"
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(out, f)
     os.replace(tmp, path)
+    if os.path.exists(ckpt_path):
+        os.remove(ckpt_path)
     print("wrote", path)
 
 
@@ -163,7 +219,8 @@ if __name__ == "__main__":
     ap.add_argument("--config", default="configs/default.yaml")
     for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
-                      ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str)]:
+                      ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
+                      ("ckpt_every", int)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
