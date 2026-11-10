@@ -1,8 +1,9 @@
 """Cut finished runs down to fewer rounds, and show where the curves stop improving.
 
-A run of R rounds is exactly the first R rounds of a longer run with the same config: nothing
-in training or in the selectors depends on the total number of rounds. So the round budget can
-be picked after the fact from the long runs, without rerunning anything.
+With a constant learning rate, a run of R rounds is the first R rounds of a longer run with
+the same config: nothing else depends on the total number of rounds. So the round budget can be
+picked after the fact from the long runs, without rerunning anything. With lr_schedule: cosine
+the rate in every round depends on the total, so such runs cannot be cut (--report still works).
 
 Usage:
     python -m metrics.truncate results --report                 # accuracy at 100, 200, ... rounds
@@ -24,6 +25,10 @@ LAST = 10   # same window as metrics.loader's *_last10 columns
 
 def truncate(run, rounds):
     """The results dict main.py would have written with cfg['rounds'] = rounds."""
+    sched = run["cfg"].get("lr_schedule") or "constant"
+    if sched != "constant":
+        raise ValueError(f"cannot cut a run with lr_schedule={sched!r}: its learning rate in every "
+                         "round depends on the total number of rounds, so rerun with --rounds")
     n = len(run["global_acc"])
     if rounds > n:
         raise ValueError(f"run has only {n} rounds, cannot cut to {rounds}")

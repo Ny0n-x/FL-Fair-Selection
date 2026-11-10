@@ -24,7 +24,7 @@ def cfg(selector):
     return {"dataset": "cifar10", "alpha": 0.1, "n_clients": N, "k": K, "rounds": ROUNDS,
             "local_epochs": 1, "batch_size": 8, "lr": 0.01, "seed": 0, "selector": selector,
             "good_def": "count", "d": None, "T": 3, "M": 1, "eps": 0.1, "filler": "random",
-            "ckpt_every": 2}
+            "ckpt_every": 2, "lr_schedule": "cosine", "lr_min": 0.0}
 
 
 class Crash(Exception):
@@ -72,8 +72,26 @@ def test_truncated_long_run_equals_short_run(selector, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DEV", torch.device("cpu"))
     monkeypatch.chdir(tmp_path)
     path = f"results/{selector}_cifar10_0.1_count_0.json"
-    main.run(cfg(selector))
+    const = {**cfg(selector), "lr_schedule": "constant"}
+    main.run(dict(const))
     long = json.load(open(path))
-    short_cfg = {**cfg(selector), "rounds": 4}
+    short_cfg = {**const, "rounds": 4}
     main.run(short_cfg)
     assert truncate(long, 4) == json.load(open(path))
+
+
+def test_cosine_lr():
+    c = {"lr": 0.01, "rounds": 100, "lr_schedule": "cosine", "lr_min": 0.001}
+    lrs = [main.lr_at(r, c) for r in range(100)]
+    assert lrs[0] == pytest.approx(0.01)
+    assert lrs[50] == pytest.approx(0.0055)                 # halfway between lr and lr_min
+    assert all(a > b for a, b in zip(lrs, lrs[1:]))         # strictly decreasing
+    assert lrs[-1] > 0.001                                  # last round still trains
+    assert main.lr_at(99, {"lr": 0.01, "rounds": 100}) == 0.01   # old cfgs: constant
+
+
+def test_truncate_refuses_cosine():
+    from metrics.truncate import truncate
+    run = {"cfg": {"lr_schedule": "cosine"}, "global_acc": [0.1] * 5}
+    with pytest.raises(ValueError, match="cosine"):
+        truncate(run, 3)

@@ -12,7 +12,7 @@ checkpoint is deleted once the results JSON is written.
 
 Later, move the loop into fl/train.py and keep this as a thin wrapper.
 """
-import argparse, copy, json, os, random
+import argparse, copy, json, math, os, random
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 import yaml
@@ -52,9 +52,27 @@ class CNN(nn.Module):
         return self.f2(F.relu(self.f1(x.flatten(1))))
 
 
-def train_local(model, X, y, cfg):
+def lr_at(r, cfg):
+    """Client learning rate in round r (0-indexed).
+
+    constant: cfg["lr"] every round.
+    cosine:   cfg["lr"] in round 0, falling along a half cosine towards cfg["lr_min"] (reached
+              just after the last round, so the last round still trains), so the global model
+              settles by the end of the run instead of drifting.
+    Results JSONs from before the schedule existed have no lr_schedule and were constant.
+    """
+    sched = cfg.get("lr_schedule") or "constant"
+    if sched == "constant":
+        return cfg["lr"]
+    if sched == "cosine":
+        lo = cfg.get("lr_min") or 0.0
+        return lo + 0.5 * (cfg["lr"] - lo) * (1 + math.cos(math.pi * r / cfg["rounds"]))
+    raise ValueError(f"unknown lr_schedule {sched!r}; use constant or cosine")
+
+
+def train_local(model, X, y, cfg, lr):
     model.to(DEV).train()
-    opt = torch.optim.SGD(model.parameters(), lr=cfg["lr"], momentum=0.9)
+    opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     bs = cfg["batch_size"]
     for _ in range(cfg["local_epochs"]):
         perm = torch.randperm(len(X))
@@ -151,7 +169,7 @@ def run(cfg):
     def update_fn(ids):
         out = []
         for i in ids:
-            m = copy.deepcopy(glob); train_local(m, *train[i], cfg)
+            m = copy.deepcopy(glob); train_local(m, *train[i], cfg, lr)
             out.append((flat(m) - flat(glob)).numpy())
         return out
 
@@ -165,14 +183,16 @@ def run(cfg):
         start = state["round"]
         print(f"resuming from {ckpt_path} at round {start}", flush=True)
 
+    lr = None   # set per round below; update_fn (DivFL) trains with the same rate
     for r in range(start, cfg["rounds"]):
+        lr = lr_at(r, cfg)
         ctx = Ctx(); ctx.loss_fn, ctx.update_fn = loss_fn, update_fn
         chosen = [int(i) for i in selector.select(r, ctx)]
         assert len(set(chosen)) == k, f"selector returned {len(chosen)} ids, expected {k} distinct"
         states, ws = [], []
         g0 = flat(glob)
         for i in chosen:
-            m = copy.deepcopy(glob); train_local(m, *train[i], cfg)
+            m = copy.deepcopy(glob); train_local(m, *train[i], cfg, lr)
             ctx.updates[i] = (flat(m) - g0).numpy()
             states.append({kk: v.detach().clone() for kk, v in m.state_dict().items()})
             ws.append(sizes[i]); counts[i] += 1
@@ -220,7 +240,7 @@ if __name__ == "__main__":
     for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
                       ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
-                      ("ckpt_every", int)]:
+                      ("ckpt_every", int), ("lr_schedule", str), ("lr_min", float)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))
