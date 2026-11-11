@@ -1,7 +1,8 @@
 """Run a grid of main.py configs: selectors x alphas x good_defs x seeds.
 
-Runs whose results JSON already exists are skipped, so an interrupted sweep can be
-restarted with the same command. Each run's stdout/stderr goes to results/logs/.
+Runs whose results JSON already exists are skipped, and a run that was cut off resumes from its
+last checkpoint in results/ckpt/ (see main.py), so an interrupted sweep can be restarted with the
+same command. Each run's stdout/stderr goes to results/logs/.
 
 Usage:
     python sweep.py --selectors random --alphas 0.1 0.5 1.0 --seeds 0 1 2 3 4
@@ -41,7 +42,7 @@ def run_one(job, config, extra, log_dir, env):
            "--good_def", good, "--seed", str(seed), *extra]
     log = os.path.join(log_dir, f"{sel}_{a}_{good}_{seed}.log")
     t0 = time.time()
-    with open(log, "w") as f:
+    with open(log, "a") as f:   # append, so the log of a resumed run keeps the earlier part
         rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, env=env).returncode
     return job, rc, time.time() - t0, log
 
