@@ -6,13 +6,15 @@ Usage:
     python main.py --selector power_of_choice --alpha 0.5 --seed 1
     python main.py --rounds 5                        # quick smoke test
 
-Every --ckpt_every rounds (default 10) the run state is saved to results/ckpt/. If the process
-dies, running the same command again resumes from the last checkpoint instead of round 0. The
+Every --ckpt_minutes minutes (default 10; or every --ckpt_every rounds if given) the run state
+is saved to results/ckpt/. Saving by time keeps Drive writes low: a DivFL checkpoint is ~95 MB,
+and saving that every 10 rounds from two parallel runs took Colab's Drive mount down. If the
+process dies, running the same command again resumes from the last checkpoint instead of round 0. The
 checkpoint is deleted once the results JSON is written.
 
 Later, move the loop into fl/train.py and keep this as a thin wrapper.
 """
-import argparse, copy, json, math, os, random
+import argparse, copy, json, math, os, random, time
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 import yaml
@@ -123,10 +125,33 @@ def set_rng_state(s):
 
 
 def save_ckpt(path, state):
-    """Write to a temp file and rename, so a crash mid-write never leaves a broken checkpoint."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(state, path + ".tmp")
-    os.replace(path + ".tmp", path)
+    """Write to a temp file and rename, so a crash mid-write never leaves a broken checkpoint.
+    A failed save (e.g. Drive briefly unavailable) is reported, not fatal: the run goes on and
+    the next save tries again. Returns whether the save worked."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(state, path + ".tmp")
+        os.replace(path + ".tmp", path)
+        return True
+    except OSError as e:
+        print(f"checkpoint save failed, continuing without it: {e}", flush=True)
+        return False
+
+
+def write_json(path, out, tries=5, wait=60):
+    """Atomic write of the results JSON, retried for a few minutes if the disk is unavailable."""
+    for t in range(tries):
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path + ".tmp", "w") as f:
+                json.dump(out, f)
+            os.replace(path + ".tmp", path)
+            return
+        except OSError as e:
+            if t == tries - 1:
+                raise
+            print(f"writing {path} failed ({e}), retrying in {wait}s", flush=True)
+            time.sleep(wait)
 
 
 def load_ckpt(path, cfg):
@@ -146,7 +171,10 @@ def load_ckpt(path, cfg):
 
 # ---------------- main ----------------
 def run(cfg):
-    ckpt_every = cfg.pop("ckpt_every", None) or 10   # not part of the experiment, keep out of cfg
+    # checkpoint settings are not part of the experiment: keep them out of cfg and the JSON
+    ckpt_every = cfg.pop("ckpt_every", None)
+    ckpt_secs = 60 * (cfg.pop("ckpt_minutes", None) or 10)
+    last_save = time.time()
     name = f"{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}"
     path, ckpt_path = f"results/{name}.json", f"results/ckpt/{name}.pt"
     random.seed(cfg["seed"]); np.random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
@@ -208,10 +236,12 @@ def run(cfg):
         client_log.append(accs)
         acc_log.append(sum(a * m for a, m in zip(accs, n_test)) / sum(n_test))
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
-        if (r + 1) % ckpt_every == 0 and r + 1 < cfg["rounds"]:
+        due = ((r + 1) % ckpt_every == 0) if ckpt_every else (time.time() - last_save >= ckpt_secs)
+        if due and r + 1 < cfg["rounds"]:
             save_ckpt(ckpt_path, {"cfg": cfg, "round": r + 1, "model": glob.state_dict(),
                                   "selector": selector, "rng": rng_state(),
                                   "logs": (counts, sel_log, acc_log, client_log, query_log)})
+            last_save = time.time()   # after a failed save too, so a dead disk is not retried every round
 
     out = {
         "cfg": {kk: v for kk, v in cfg.items()},
@@ -224,13 +254,12 @@ def run(cfg):
         "queried_per_round": query_log,          # extra client queries in each round
         "extra_queries": sum(query_log),
     }
-    os.makedirs("results", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(out, f)
-    os.replace(tmp, path)
-    if os.path.exists(ckpt_path):
-        os.remove(ckpt_path)
+    write_json(path, out)
+    try:
+        if os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
+    except OSError as e:  # the results are safe; a stale checkpoint is ignored once the JSON exists
+        print(f"could not remove {ckpt_path}: {e}", flush=True)
     print("wrote", path)
 
 
@@ -240,7 +269,7 @@ if __name__ == "__main__":
     for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
                       ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
-                      ("ckpt_every", int), ("lr_schedule", str), ("lr_min", float)]:
+                      ("ckpt_every", int), ("ckpt_minutes", float), ("lr_schedule", str), ("lr_min", float)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))

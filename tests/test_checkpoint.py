@@ -95,3 +95,15 @@ def test_truncate_refuses_cosine():
     run = {"cfg": {"lr_schedule": "cosine"}, "global_acc": [0.1] * 5}
     with pytest.raises(ValueError, match="cosine"):
         truncate(run, 3)
+
+
+def test_failed_checkpoint_save_does_not_stop_the_run(tmp_path, monkeypatch):
+    """Drive vanishing mid-run (FileNotFoundError on results/ckpt) must not kill training."""
+    monkeypatch.setattr(main, "load_partition", fake_partition)
+    monkeypatch.setattr(main, "DEV", torch.device("cpu"))
+    monkeypatch.chdir(tmp_path)
+    def broken(*a, **kw):
+        raise FileNotFoundError("results/ckpt")
+    monkeypatch.setattr(main.torch, "save", broken)
+    main.run(cfg("divfl"))
+    assert len(json.load(open("results/divfl_cifar10_0.1_count_0.json"))["global_acc"]) == ROUNDS
