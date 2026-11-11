@@ -6,9 +6,15 @@ Usage:
     python main.py --selector power_of_choice --alpha 0.5 --seed 1
     python main.py --rounds 5                        # quick smoke test
 
+Every --ckpt_minutes minutes (default 10; or every --ckpt_every rounds if given) the run state
+is saved to results/ckpt/. Saving by time keeps Drive writes low: a DivFL checkpoint is ~95 MB,
+and saving that every 10 rounds from two parallel runs took Colab's Drive mount down. If the
+process dies, running the same command again resumes from the last checkpoint instead of round 0. The
+checkpoint is deleted once the results JSON is written.
+
 Later, move the loop into fl/train.py and keep this as a thin wrapper.
 """
-import argparse, copy, json, os, random
+import argparse, copy, json, math, os, random, time
 import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 import yaml
@@ -48,9 +54,27 @@ class CNN(nn.Module):
         return self.f2(F.relu(self.f1(x.flatten(1))))
 
 
-def train_local(model, X, y, cfg):
+def lr_at(r, cfg):
+    """Client learning rate in round r (0-indexed).
+
+    constant: cfg["lr"] every round.
+    cosine:   cfg["lr"] in round 0, falling along a half cosine towards cfg["lr_min"] (reached
+              just after the last round, so the last round still trains), so the global model
+              settles by the end of the run instead of drifting.
+    Results JSONs from before the schedule existed have no lr_schedule and were constant.
+    """
+    sched = cfg.get("lr_schedule") or "constant"
+    if sched == "constant":
+        return cfg["lr"]
+    if sched == "cosine":
+        lo = cfg.get("lr_min") or 0.0
+        return lo + 0.5 * (cfg["lr"] - lo) * (1 + math.cos(math.pi * r / cfg["rounds"]))
+    raise ValueError(f"unknown lr_schedule {sched!r}; use constant or cosine")
+
+
+def train_local(model, X, y, cfg, lr):
     model.to(DEV).train()
-    opt = torch.optim.SGD(model.parameters(), lr=cfg["lr"], momentum=0.9)
+    opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     bs = cfg["batch_size"]
     for _ in range(cfg["local_epochs"]):
         perm = torch.randperm(len(X))
@@ -88,8 +112,71 @@ class Ctx:
         self.updates = {}        # {client_id: update vector} for clients trained this round
 
 
+# ---------------- checkpoints ----------------
+def rng_state():
+    return {"py": random.getstate(), "np": np.random.get_state(), "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None}
+
+
+def set_rng_state(s):
+    random.setstate(s["py"]); np.random.set_state(s["np"]); torch.set_rng_state(s["torch"])
+    if s["cuda"] is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(s["cuda"])
+
+
+def save_ckpt(path, state):
+    """Write to a temp file and rename, so a crash mid-write never leaves a broken checkpoint.
+    A failed save (e.g. Drive briefly unavailable) is reported, not fatal: the run goes on and
+    the next save tries again. Returns whether the save worked."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(state, path + ".tmp")
+        os.replace(path + ".tmp", path)
+        return True
+    except OSError as e:
+        print(f"checkpoint save failed, continuing without it: {e}", flush=True)
+        return False
+
+
+def write_json(path, out, tries=5, wait=60):
+    """Atomic write of the results JSON, retried for a few minutes if the disk is unavailable."""
+    for t in range(tries):
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path + ".tmp", "w") as f:
+                json.dump(out, f)
+            os.replace(path + ".tmp", path)
+            return
+        except OSError as e:
+            if t == tries - 1:
+                raise
+            print(f"writing {path} failed ({e}), retrying in {wait}s", flush=True)
+            time.sleep(wait)
+
+
+def load_ckpt(path, cfg):
+    """The saved state if there is a usable checkpoint for exactly this cfg, else None."""
+    if not os.path.exists(path):
+        return None
+    try:
+        state = torch.load(path, map_location=DEV, weights_only=False)
+    except Exception as e:  # e.g. truncated by a disconnect
+        print(f"ignoring unreadable checkpoint {path}: {e}", flush=True)
+        return None
+    if state["cfg"] != cfg:
+        print(f"ignoring checkpoint {path}: it was made with a different config", flush=True)
+        return None
+    return state
+
+
 # ---------------- main ----------------
 def run(cfg):
+    # checkpoint settings are not part of the experiment: keep them out of cfg and the JSON
+    ckpt_every = cfg.pop("ckpt_every", None)
+    ckpt_secs = 60 * (cfg.pop("ckpt_minutes", None) or 10)
+    last_save = time.time()
+    name = f"{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}"
+    path, ckpt_path = f"results/{name}.json", f"results/ckpt/{name}.pt"
     random.seed(cfg["seed"]); np.random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
     train, test = load_partition(cfg)
     n, k = cfg["n_clients"], cfg["k"]
@@ -110,18 +197,30 @@ def run(cfg):
     def update_fn(ids):
         out = []
         for i in ids:
-            m = copy.deepcopy(glob); train_local(m, *train[i], cfg)
+            m = copy.deepcopy(glob); train_local(m, *train[i], cfg, lr)
             out.append((flat(m) - flat(glob)).numpy())
         return out
 
-    for r in range(cfg["rounds"]):
+    start = 0
+    state = load_ckpt(ckpt_path, cfg)
+    if state is not None:
+        glob.load_state_dict(state["model"])
+        selector = state["selector"]
+        counts, sel_log, acc_log, client_log, query_log = state["logs"]
+        set_rng_state(state["rng"])
+        start = state["round"]
+        print(f"resuming from {ckpt_path} at round {start}", flush=True)
+
+    lr = None   # set per round below; update_fn (DivFL) trains with the same rate
+    for r in range(start, cfg["rounds"]):
+        lr = lr_at(r, cfg)
         ctx = Ctx(); ctx.loss_fn, ctx.update_fn = loss_fn, update_fn
         chosen = [int(i) for i in selector.select(r, ctx)]
         assert len(set(chosen)) == k, f"selector returned {len(chosen)} ids, expected {k} distinct"
         states, ws = [], []
         g0 = flat(glob)
         for i in chosen:
-            m = copy.deepcopy(glob); train_local(m, *train[i], cfg)
+            m = copy.deepcopy(glob); train_local(m, *train[i], cfg, lr)
             ctx.updates[i] = (flat(m) - g0).numpy()
             states.append({kk: v.detach().clone() for kk, v in m.state_dict().items()})
             ws.append(sizes[i]); counts[i] += 1
@@ -137,6 +236,12 @@ def run(cfg):
         client_log.append(accs)
         acc_log.append(sum(a * m for a, m in zip(accs, n_test)) / sum(n_test))
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
+        due = ((r + 1) % ckpt_every == 0) if ckpt_every else (time.time() - last_save >= ckpt_secs)
+        if due and r + 1 < cfg["rounds"]:
+            save_ckpt(ckpt_path, {"cfg": cfg, "round": r + 1, "model": glob.state_dict(),
+                                  "selector": selector, "rng": rng_state(),
+                                  "logs": (counts, sel_log, acc_log, client_log, query_log)})
+            last_save = time.time()   # after a failed save too, so a dead disk is not retried every round
 
     out = {
         "cfg": {kk: v for kk, v in cfg.items()},
@@ -149,12 +254,12 @@ def run(cfg):
         "queried_per_round": query_log,          # extra client queries in each round
         "extra_queries": sum(query_log),
     }
-    os.makedirs("results", exist_ok=True)
-    path = f"results/{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}.json"
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(out, f)
-    os.replace(tmp, path)
+    write_json(path, out)
+    try:
+        if os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
+    except OSError as e:  # the results are safe; a stale checkpoint is ignored once the JSON exists
+        print(f"could not remove {ckpt_path}: {e}", flush=True)
     print("wrote", path)
 
 
@@ -163,7 +268,8 @@ if __name__ == "__main__":
     ap.add_argument("--config", default="configs/default.yaml")
     for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
-                      ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str)]:
+                      ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
+                      ("ckpt_every", int), ("ckpt_minutes", float), ("lr_schedule", str), ("lr_min", float)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config))

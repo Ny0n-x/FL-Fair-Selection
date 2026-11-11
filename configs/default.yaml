@@ -6,6 +6,8 @@ rounds: 100
 local_epochs: 2
 batch_size: 32   # not set before; main.py needs it
 lr: 0.01        # tune once on Random, then freeze
+lr_schedule: cosine  # constant | cosine (lr -> lr_min over the run, so curves settle)
+lr_min: 0.0
 seed: 0
 selector: random
 good_def: count # count | weighted
