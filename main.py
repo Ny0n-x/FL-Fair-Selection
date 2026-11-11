@@ -22,6 +22,7 @@ from torchvision import datasets
 
 from baselines import REGISTRY
 from data.partition import get_partition
+from fl.naming import result_name
 from selection import REGISTRY as TEAM
 
 DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -175,7 +176,7 @@ def run(cfg):
     ckpt_every = cfg.pop("ckpt_every", None)
     ckpt_secs = 60 * (cfg.pop("ckpt_minutes", None) or 10)
     last_save = time.time()
-    name = f"{cfg['selector']}_{cfg['dataset']}_{cfg['alpha']}_{cfg['good_def']}_{cfg['seed']}"
+    name = result_name(cfg)
     path, ckpt_path = f"results/{name}.json", f"results/ckpt/{name}.pt"
     random.seed(cfg["seed"]); np.random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
     train, test = load_partition(cfg)
