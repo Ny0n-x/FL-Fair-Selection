@@ -5,6 +5,7 @@ import pytest
 import torch
 
 import main
+from fl.naming import result_name
 
 torch.set_num_threads(1)   # tiny model: more threads only add overhead
 
@@ -35,7 +36,7 @@ class Crash(Exception):
 def test_resume_matches_uninterrupted(selector, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "load_partition", fake_partition)
     monkeypatch.setattr(main, "DEV", torch.device("cpu"))
-    name = f"results/{selector}_cifar10_0.1_count_0"
+    name = f"results/{result_name(cfg(selector))}"
 
     (tmp_path / "full").mkdir()
     monkeypatch.chdir(tmp_path / "full")
@@ -71,8 +72,8 @@ def test_truncated_long_run_equals_short_run(selector, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "load_partition", fake_partition)
     monkeypatch.setattr(main, "DEV", torch.device("cpu"))
     monkeypatch.chdir(tmp_path)
-    path = f"results/{selector}_cifar10_0.1_count_0.json"
     const = {**cfg(selector), "lr_schedule": "constant"}
+    path = f"results/{result_name(const)}.json"
     main.run(dict(const))
     long = json.load(open(path))
     short_cfg = {**const, "rounds": 4}
@@ -106,4 +107,4 @@ def test_failed_checkpoint_save_does_not_stop_the_run(tmp_path, monkeypatch):
         raise FileNotFoundError("results/ckpt")
     monkeypatch.setattr(main.torch, "save", broken)
     main.run(cfg("divfl"))
-    assert len(json.load(open("results/divfl_cifar10_0.1_count_0.json"))["global_acc"]) == ROUNDS
+    assert len(json.load(open(f"results/{result_name(cfg('divfl'))}.json"))["global_acc"]) == ROUNDS
