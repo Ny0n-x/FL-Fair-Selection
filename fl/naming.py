@@ -14,6 +14,8 @@ PER_SELECTOR = {
     "power_of_choice": {"d": None},
     "guarantee": {"T": 10, "M": 1, "filler": "random"},
     "deficit": {"eps": 0.1},
+    "subtrunc": {"subtrunc_b": 1.10, "subtrunc_lambda": 0.5, "subtrunc_r": 10,
+                 "subtrunc_norm": False},
 }
 # NOT tagged: rounds, ckpt_*, config path. A run with fewer rounds is a prefix of a longer one.
 
