@@ -6,6 +6,7 @@ FL client selection via fair division
     python main.py --rounds 5                  # random, default config (100 rounds)
     python main.py --selector power_of_choice
     python main.py --selector divfl --alpha 0.5 --seed 1
+    python main.py --selector subtrunc --subtrunc_lambda 0.5
     python main.py --selector guarantee --alpha 0.1 --seed 0
 
 Defaults are in `configs/default.yaml`; command-line flags override them.
