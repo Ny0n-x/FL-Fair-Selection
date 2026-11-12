@@ -25,6 +25,10 @@ def load_labels(dataset: str, data_root: str = "data/raw") -> np.ndarray:
         from torchvision.datasets import CIFAR10
 
         return np.asarray(CIFAR10(root=data_root, train=True, download=True).targets)
+    if dataset == "mnist":
+        from torchvision.datasets import MNIST
+
+        return np.asarray(MNIST(root=data_root, train=True, download=True).targets)
     if dataset == "femnist":
         raise NotImplementedError("FEMNIST uses its natural per-writer split; not implemented yet.")
     raise ValueError(f"Unknown dataset: {dataset!r}")
