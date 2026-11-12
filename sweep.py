@@ -20,13 +20,34 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 
+from fl.naming import result_name
+
 # selectors whose behaviour does not depend on good_def; run once with good=count
-GOOD_AGNOSTIC = {"random", "power_of_choice", "divfl", "round_robin", "qffl", "propfair"}
+# (guarantee: its random/loss filler never reads the deficit. If it ever uses
+#  tracker.deficit(mode), remove it from this set.)
+GOOD_AGNOSTIC = {"random", "power_of_choice", "divfl", "round_robin", "guarantee", "qffl", "propfair"}
 
 
-def result_path(results_dir, selector, dataset, alpha, good, seed):
-    """Same name main.py writes: alpha is a Python float, so 1 -> '1.0'."""
-    return os.path.join(results_dir, f"{selector}_{dataset}_{float(alpha)}_{good}_{seed}.json")
+def parse_extra(extra):
+    """['--d', '50', '--rounds=300'] -> {'d': 50, 'rounds': 300} (values typed like YAML)."""
+    out, i = {}, 0
+    while i < len(extra):
+        tok = extra[i]
+        if tok.startswith("--"):
+            key, eq, val = tok[2:].partition("=")
+            if not eq and i + 1 < len(extra) and not extra[i + 1].startswith("--"):
+                val, i = extra[i + 1], i + 1
+            out[key] = yaml.safe_load(val) if val != "" else True
+        i += 1
+    return out
+
+
+def result_path(results_dir, selector, dataset, alpha, good, seed, cfg=None):
+    """Same name main.py writes (fl.naming.result_name). `cfg` = the config yaml plus any
+    overrides passed to main.py; without it only the base name is built (default knobs)."""
+    full = {**(cfg or {}), "selector": selector, "dataset": dataset, "alpha": alpha,
+            "good_def": good, "seed": seed}
+    return os.path.join(results_dir, result_name(full) + ".json")
 
 
 def grid(selectors, alphas, goods, seeds):
@@ -36,11 +57,13 @@ def grid(selectors, alphas, goods, seeds):
         yield sel, a, (goods[0] if sel in GOOD_AGNOSTIC else good), seed
 
 
-def run_one(job, config, extra, log_dir, env):
+def run_one(job, config, extra, log_dir, env, cfg):
     sel, a, good, seed = job
+    name = os.path.splitext(os.path.basename(
+        result_path("", sel, cfg["dataset"], a, good, seed, cfg=cfg)))[0]
     cmd = [sys.executable, "main.py", "--config", config, "--selector", sel, "--alpha", str(a),
            "--good_def", good, "--seed", str(seed), *extra]
-    log = os.path.join(log_dir, f"{sel}_{a}_{good}_{seed}.log")
+    log = os.path.join(log_dir, f"{name}.log")
     t0 = time.time()
     with open(log, "a") as f:   # append, so the log of a resumed run keeps the earlier part
         rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, env=env).returncode
@@ -60,11 +83,12 @@ def main():
     ap.add_argument("--force", action="store_true", help="rerun even if the JSON exists")
     a, extra = ap.parse_known_args()
     extra = [x for x in extra if x != "--"]
-    dataset = yaml.safe_load(open(a.config))["dataset"]
+    base_cfg = {**yaml.safe_load(open(a.config)), **parse_extra(extra)}   # what main.py will see
+    dataset = base_cfg["dataset"]
 
     jobs, skipped = [], 0
     for job in grid(a.selectors, a.alphas, a.good, a.seeds):
-        if not a.force and os.path.exists(result_path(a.results, job[0], dataset, *job[1:])):
+        if not a.force and os.path.exists(result_path(a.results, job[0], dataset, *job[1:], cfg=base_cfg)):
             skipped += 1
         else:
             jobs.append(job)
@@ -82,7 +106,7 @@ def main():
         env.setdefault("OMP_NUM_THREADS", str(max(1, (os.cpu_count() or 1) // a.jobs)))
     failed = []
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-        futs = [ex.submit(run_one, j, a.config, extra, log_dir, env) for j in jobs]
+        futs = [ex.submit(run_one, j, a.config, extra, log_dir, env, base_cfg) for j in jobs]
         for i, fut in enumerate(futs, 1):
             job, rc, dt, log = fut.result()
             status = "ok" if rc == 0 else f"FAILED (exit {rc}, see {log})"

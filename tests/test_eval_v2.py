@@ -134,6 +134,7 @@ def test_result_path_matches_main_py_float_format():
 
 
 def test_grid_runs_good_agnostic_selectors_once():
-    jobs = list(grid(["random", "guarantee"], [0.1], ["count", "weighted"], [0, 1]))
+    jobs = list(grid(["random", "guarantee", "deficit"], [0.1], ["count", "weighted"], [0, 1]))
     assert sum(j[0] == "random" for j in jobs) == 2
-    assert sum(j[0] == "guarantee" for j in jobs) == 4
+    assert sum(j[0] == "guarantee" for j in jobs) == 2   # filler ignores good_def
+    assert sum(j[0] == "deficit" for j in jobs) == 4
