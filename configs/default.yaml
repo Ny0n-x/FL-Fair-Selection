@@ -12,6 +12,10 @@ seed: 0
 selector: random
 good_def: count # count | weighted
 d: null               # Power-of-Choice candidate set size (null -> 2*k)
+subtrunc_b: 1.10      # SUBTRUNC truncation b (paper experiments use 1.10)
+subtrunc_lambda: 0.5  # SUBTRUNC fairness weight; 0 = DivFL (paper sweeps 0.01-0.95)
+subtrunc_r: 10        # SUBTRUNC stochastic-greedy candidates per step (paper: 10)
+subtrunc_norm: false  # divide G by its max if SUBTRUNC behaves like DivFL
 T: 10
 M: 1
 eps: 0.1
