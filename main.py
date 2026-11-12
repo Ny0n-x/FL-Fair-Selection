@@ -5,7 +5,8 @@ Usage:
     python main.py                                   # uses configs/default.yaml
     python main.py --selector power_of_choice --alpha 0.5 --seed 1
     python main.py --rounds 5                        # quick smoke test
-
+    python main.py --dataset mnist --rounds 5
+    
 Every --ckpt_minutes minutes (default 10; or every --ckpt_every rounds if given) the run state
 is saved to results/ckpt/. Saving by time keeps Drive writes low: a DivFL checkpoint is ~95 MB,
 and saving that every 10 rounds from two parallel runs took Colab's Drive mount down. If the
@@ -26,13 +27,21 @@ from selection import REGISTRY as TEAM
 
 DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
+DATASETS = { 
+    "cifar10": dict(cls=datasets.CIFAR10, ch=3, hw=32, mean=0.5,    std=0.5),
+    "mnist":   dict(cls=datasets.MNIST,   ch=1, hw=28, mean=0.1307, std=0.3081),
+}
 # ---------------- data (stub; swap for Person A's get_partition) ----------------
 def load_partition(cfg):
     """Suresh's index partition -> per-client (X, y) tensors."""
-    ds = datasets.CIFAR10("data/raw", train=True, download=True)
-    X = (torch.tensor(ds.data).permute(0, 3, 1, 2).float() / 255 - 0.5) / 0.5
-    y = torch.tensor(ds.targets)
+    spec = DATASETS[cfg["dataset"]]
+    ds = spec["cls"]("data/raw", train=True, download=True)
+   
+    data = torch.as_tensor(np.asarray(ds.data))      # CIFAR: numpy, MNIST: tensor
+    if data.ndim == 3:                               # MNIST is N x 28 x 28: add a channel axis
+        data = data.unsqueeze(-1)
+    X = (data.permute(0, 3, 1, 2).float() / 255 - spec["mean"]) / spec["std"]
+    y = torch.as_tensor(np.asarray(ds.targets)).long()
     part = get_partition(cfg["dataset"], cfg["alpha"], cfg["n_clients"], cfg["seed"],
                          labels=y.numpy())
     X, y = X.to(DEV), y.to(DEV)   # CIFAR-10 is ~600 MB; keep it on the GPU, not per batch
@@ -42,12 +51,17 @@ def load_partition(cfg):
 
 
 # ---------------- model + helpers ----------------
+# class CNN(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.c1, self.c2 = nn.Conv2d(3, 32, 3), nn.Conv2d(32, 64, 3)
+#         self.f1, self.f2 = nn.Linear(64 * 6 * 6, 128), nn.Linear(128, 10)
 class CNN(nn.Module):
-    def __init__(self):
+    def __init__(self, ch=3, hw=32):
         super().__init__()
-        self.c1, self.c2 = nn.Conv2d(3, 32, 3), nn.Conv2d(32, 64, 3)
-        self.f1, self.f2 = nn.Linear(64 * 6 * 6, 128), nn.Linear(128, 10)
-
+        feat = ((hw - 2) // 2 - 2) // 2          # 32 -> 6, 28 -> 5
+        self.c1, self.c2 = nn.Conv2d(ch, 32, 3), nn.Conv2d(32, 64, 3)
+        self.f1, self.f2 = nn.Linear(64 * feat * feat, 128), nn.Linear(128, 10)
     def forward(self, x):
         x = F.max_pool2d(F.relu(self.c1(x)), 2)
         x = F.max_pool2d(F.relu(self.c2(x)), 2)
@@ -187,7 +201,8 @@ def run(cfg):
         raise KeyError(f"unknown selector {cfg['selector']}; have {list(registry)}")
     selector = registry[cfg["selector"]](n, k, sizes, cfg)
 
-    glob = CNN().to(DEV)
+    spec = DATASETS[cfg["dataset"]]
+    glob = CNN(spec["ch"], spec["hw"]).to(DEV)
     n_test = [len(t[0]) for t in test]
     counts, sel_log, acc_log, client_log, query_log = [0] * n, [], [], [], []
 
@@ -266,7 +281,7 @@ def run(cfg):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/default.yaml")
-    for name, typ in [("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
+    for name, typ in [("dataset",str),("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
                       ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
                       ("ckpt_every", int), ("ckpt_minutes", float), ("lr_schedule", str), ("lr_min", float)]:
