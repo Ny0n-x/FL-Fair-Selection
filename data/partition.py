@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 TEST_FRACTION = 0.2
-MIN_CLIENT_SIZE = 10      # resample if any client gets fewer samples than this
+MIN_CLIENT_SIZE = 50     # resample if any client gets fewer samples than this
 MAX_RESAMPLES = 1000
 
 

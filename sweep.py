@@ -25,7 +25,7 @@ from fl.naming import result_name
 # selectors whose behaviour does not depend on good_def; run once with good=count
 # (guarantee: its random/loss filler never reads the deficit. If it ever uses
 #  tracker.deficit(mode), remove it from this set.)
-GOOD_AGNOSTIC = {"random", "power_of_choice", "divfl", "round_robin", "guarantee", "qffl", "propfair"}
+GOOD_AGNOSTIC = {"random", "power_of_choice", "divfl", "round_robin", "guarantee", "subtrunc", "qffl", "propfair"}
 
 
 def parse_extra(extra):
