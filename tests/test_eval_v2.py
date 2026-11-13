@@ -1,5 +1,7 @@
 import json
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -130,7 +132,7 @@ def test_latex_table_bold_and_dagger(tmp_path):
 
 def test_result_path_matches_main_py_float_format():
     assert result_path("results", "random", "cifar10", 1, "count", 0) == \
-        "results/random_cifar10_1.0_count_0.json"
+        os.path.join("results", "random_cifar10_1.0_count_0.json")
 
 
 def test_grid_runs_good_agnostic_selectors_once():
