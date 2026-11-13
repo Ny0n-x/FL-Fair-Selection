@@ -282,9 +282,18 @@ def run(cfg):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/default.yaml")
-    for name, typ in [("dataset",str),("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
+
+
+    def _bool(s):
+        return str(s).lower() in ("1", "true", "yes")
+
+
+    for name, typ in [("dataset", str), ("selector", str), ("alpha", float), ("seed", int), ("rounds", int),
                       ("n_clients", int), ("k", int), ("lr", float), ("d", int),
                       ("good_def", str), ("local_epochs", int), ("T", int), ("filler", str),
+                      ("M", int), ("eps", float), ("batch_size", int),
+                      ("subtrunc_b", float), ("subtrunc_lambda", float), ("subtrunc_r", int),
+                      ("subtrunc_norm", _bool),
                       ("ckpt_every", int), ("ckpt_minutes", float), ("lr_schedule", str), ("lr_min", float)]:
         ap.add_argument(f"--{name}", type=typ, default=None)
     args = ap.parse_args()
