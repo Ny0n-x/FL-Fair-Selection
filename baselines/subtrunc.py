@@ -53,6 +53,9 @@ class SubTruncSelector:
             self.loss[missing] = np.asarray(ctx.loss_fn(missing), dtype=float)
             self.seen[missing] = True
             self.extra_queries += len(missing)
+        if round_idx > 0:  # warm-up already measured every client at round 0
+            self.loss[:] = np.asarray(ctx.loss_fn(np.arange(self.n)), dtype=float)
+            self.extra_queries += self.n
         return self._greedy()
 
     def _greedy(self):
