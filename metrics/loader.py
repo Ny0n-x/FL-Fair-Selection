@@ -10,6 +10,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from fl.naming import variant_tag
 from metrics.metrics import (outcome_metrics, rounds_to_target, selection_freq_variance,
                              size_buckets)
 
@@ -56,6 +57,12 @@ def load_run(path):
     if missing:
         raise KeyError(f"{os.path.basename(path)} is missing keys: {missing}")
     r[KEYS["alpha"]] = float(r[KEYS["alpha"]])
+    # Fold the selector's own non-default knobs into its label, so variants (SUBTRUNC b=6 vs
+    # b=1.10, Power-of-Choice d=50, ...) are separate rows instead of being averaged together.
+    # Runs with default knobs keep the bare name. Shared knobs (k, lr, ...) are not folded in.
+    base = r[KEYS["selector"]]
+    r["base_selector"] = base
+    r[KEYS["selector"]] = base + variant_tag({**cfg, "selector": base}, common=False)
     return r
 
 
