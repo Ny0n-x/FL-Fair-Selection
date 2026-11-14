@@ -25,11 +25,13 @@ from metrics.metrics import worst_frac_mean  # noqa: E402
 COL, FULL = 3.4, 7.0
 INK, INK2, GRID = "#1a1a1a", "#555555", "#e5e5e5"
 # Colours follow the validated categorical slot order, so adjacent slots stay CVD-safe.
-OURS = {"guarantee": ("#eb6834", "o"), "prop_fair": ("#1baf7a", "o"), "ef1": ("#4a3aa7", "o")}
+OURS = {"guarantee": ("#eb6834", "o"), "deficit": ("#0e8f9e", "o"), "prop_fair": ("#1baf7a", "o"),
+        "ef1": ("#4a3aa7", "o")}
 BASELINES = {
     "random": ("#2a78d6", "s"),
     "power_of_choice": ("#eda100", "^"),
     "divfl": ("#e87ba4", "v"),
+    "subtrunc": ("#8c5a2b", "<"),
     "round_robin": ("#008300", "D"),
     "qffl": ("#e34948", "P"),
     "propfair": ("#6b6a66", "X"),
@@ -37,8 +39,8 @@ BASELINES = {
 SEQ = matplotlib.colors.LinearSegmentedColormap.from_list(
     "seq_blue", ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 NAMES = {"random": "Random", "round_robin": "Round-Robin", "power_of_choice": "Power-of-Choice",
-         "qffl": "q-FFL", "divfl": "DivFL", "propfair": "PropFair",
-         "prop_fair": "Proportional", "guarantee": "Guarantee", "ef1": "EF1-Lag"}
+         "qffl": "q-FFL", "divfl": "DivFL", "subtrunc": "SUBTRUNC", "propfair": "PropFair",
+         "prop_fair": "Proportional", "guarantee": "Guarantee", "deficit": "Deficit", "ef1": "EF1-Lag"}
 
 plt.rcParams.update({
     "font.family": "serif",

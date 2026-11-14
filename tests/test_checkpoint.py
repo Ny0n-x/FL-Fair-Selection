@@ -108,3 +108,11 @@ def test_failed_checkpoint_save_does_not_stop_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr(main.torch, "save", broken)
     main.run(cfg("divfl"))
     assert len(json.load(open(f"results/{result_name(cfg('divfl'))}.json"))["global_acc"]) == ROUNDS
+
+
+def test_checkpoint_from_another_partition_is_ignored(tmp_path):
+    path = str(tmp_path / "c.pt")
+    c = cfg("random")
+    torch.save({"cfg": c, "sizes": [10, 20], "round": 3}, path)
+    assert main.load_ckpt(path, c, [10, 20])["round"] == 3
+    assert main.load_ckpt(path, c, [11, 19]) is None
