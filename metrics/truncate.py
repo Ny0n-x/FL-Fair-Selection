@@ -46,6 +46,8 @@ def truncate(run, rounds):
     out["selection_counts"] = counts
     out["queried_per_round"] = run["queried_per_round"][:rounds]
     out["extra_queries"] = sum(out["queried_per_round"])
+    if "train_loss" in run:
+        out["train_loss"] = [e for e in run["train_loss"] if e[0] < rounds]
     return out
 
 

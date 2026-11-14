@@ -211,6 +211,7 @@ def run(cfg):
     glob = CNN(spec["ch"], spec["hw"]).to(DEV)
     n_test = [len(t[0]) for t in test]
     counts, sel_log, acc_log, client_log, query_log = [0] * n, [], [], [], []
+    loss_log = []
 
     def loss_fn(ids):
         return [evaluate(glob, *train[i])[0] for i in ids]
@@ -227,7 +228,8 @@ def run(cfg):
     if state is not None:
         glob.load_state_dict(state["model"])
         selector = state["selector"]
-        counts, sel_log, acc_log, client_log, query_log = state["logs"]
+        counts, sel_log, acc_log, client_log, query_log, *rest = state["logs"]
+        loss_log = rest[0] if rest else []
         set_rng_state(state["rng"])
         start = state["round"]
         print(f"resuming from {ckpt_path} at round {start}", flush=True)
@@ -256,12 +258,15 @@ def run(cfg):
         accs = [evaluate(glob, *test[i])[1] for i in range(n)]
         client_log.append(accs)
         acc_log.append(sum(a * m for a, m in zip(accs, n_test)) / sum(n_test))
+        if r % 5 == 4 or r == 0:
+            tl = sum(evaluate(glob, *train[i])[0] * sizes[i] for i in range(n)) / sum(sizes)
+            loss_log.append([r, tl])
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
         due = ((r + 1) % ckpt_every == 0) if ckpt_every else (time.time() - last_save >= ckpt_secs)
         if due and r + 1 < cfg["rounds"]:
             save_ckpt(ckpt_path, {"cfg": cfg, "sizes": sizes, "round": r + 1, "model": glob.state_dict(),
                                   "selector": selector, "rng": rng_state(),
-                                  "logs": (counts, sel_log, acc_log, client_log, query_log)})
+                                  "logs": (counts, sel_log, acc_log, client_log, query_log, loss_log)})
             last_save = time.time()   # after a failed save too, so a dead disk is not retried every round
 
     out = {
@@ -274,6 +279,7 @@ def run(cfg):
         "data_sizes": sizes,
         "queried_per_round": query_log,          # extra client queries in each round
         "extra_queries": sum(query_log),
+        "train_loss": loss_log,
     }
     write_json(path, out)
     try:
