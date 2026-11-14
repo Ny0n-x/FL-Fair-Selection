@@ -169,8 +169,10 @@ def write_json(path, out, tries=5, wait=60):
             time.sleep(wait)
 
 
-def load_ckpt(path, cfg):
-    """The saved state if there is a usable checkpoint for exactly this cfg, else None."""
+def load_ckpt(path, cfg, sizes=None):
+    """The saved state if there is a usable checkpoint for exactly this cfg and partition, else None.
+    `sizes` (client train sizes) catches a partitioner change that leaves cfg the same, e.g. a new
+    MIN_CLIENT_SIZE: resuming then would continue a model trained on different client data."""
     if not os.path.exists(path):
         return None
     try:
@@ -180,6 +182,9 @@ def load_ckpt(path, cfg):
         return None
     if state["cfg"] != cfg:
         print(f"ignoring checkpoint {path}: it was made with a different config", flush=True)
+        return None
+    if sizes is not None and state.get("sizes", sizes) != sizes:
+        print(f"ignoring checkpoint {path}: it was made on a different data partition", flush=True)
         return None
     return state
 
@@ -218,7 +223,7 @@ def run(cfg):
         return out
 
     start = 0
-    state = load_ckpt(ckpt_path, cfg)
+    state = load_ckpt(ckpt_path, cfg, sizes)
     if state is not None:
         glob.load_state_dict(state["model"])
         selector = state["selector"]
@@ -254,7 +259,7 @@ def run(cfg):
         print(f"round {r:3d}  global_acc {acc_log[-1]:.3f}", flush=True)
         due = ((r + 1) % ckpt_every == 0) if ckpt_every else (time.time() - last_save >= ckpt_secs)
         if due and r + 1 < cfg["rounds"]:
-            save_ckpt(ckpt_path, {"cfg": cfg, "round": r + 1, "model": glob.state_dict(),
+            save_ckpt(ckpt_path, {"cfg": cfg, "sizes": sizes, "round": r + 1, "model": glob.state_dict(),
                                   "selector": selector, "rng": rng_state(),
                                   "logs": (counts, sel_log, acc_log, client_log, query_log)})
             last_save = time.time()   # after a failed save too, so a dead disk is not retried every round
