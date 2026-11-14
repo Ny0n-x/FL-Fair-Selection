@@ -16,17 +16,17 @@ import numpy as np
 
 from data.partition import get_partition, label_matrix, load_labels
 
-ALPHAS = (0.1, 0.5, 100)
+ALPHAS = (0.1, 0.5, 1.0, 100)
 
 
-def plot_alpha(labels, alpha, n_clients, seed, out_dir: Path):
-    part = get_partition("cifar10", alpha, n_clients, seed, labels=labels)
+def plot_alpha(labels, alpha, n_clients, seed, out_dir: Path, dataset="cifar10"):
+    part = get_partition(dataset, alpha, n_clients, seed, labels=labels)
 
     fig, ax = plt.subplots(figsize=(5, 3.5))
     ax.hist(part["data_sizes"], bins=15, color="#4C72B0", edgecolor="white")
     ax.set(xlabel="client train size", ylabel="# clients", title=f"Data sizes, alpha={alpha}")
     fig.tight_layout()
-    fig.savefig(out_dir / f"datasize_hist_alpha{alpha}.png", dpi=150)
+    fig.savefig(out_dir / f"datasize_hist_{dataset}_alpha{alpha}.png", dpi=150)
     plt.close(fig)
 
     mat = label_matrix(labels, part)
@@ -35,7 +35,7 @@ def plot_alpha(labels, alpha, n_clients, seed, out_dir: Path):
     ax.set(xlabel="class", ylabel="client", title=f"Label distribution, alpha={alpha}")
     fig.colorbar(im, ax=ax, label="# samples")
     fig.tight_layout()
-    fig.savefig(out_dir / f"label_heatmap_alpha{alpha}.png", dpi=150)
+    fig.savefig(out_dir / f"label_heatmap_{dataset}_alpha{alpha}.png", dpi=150)
     plt.close(fig)
 
 
@@ -51,7 +51,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     labels = load_labels(args.dataset)
     for a in ALPHAS:
-        plot_alpha(labels, a, args.n_clients, args.seed, out_dir)
+        plot_alpha(labels, a, args.n_clients, args.seed, out_dir, args.dataset)
     print(f"Saved figures to {out_dir}")
 
 
