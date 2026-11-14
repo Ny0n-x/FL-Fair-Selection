@@ -8,7 +8,7 @@ Runs with all-default knobs keep the old name, so existing results stay valid.
 
 # knobs that can change any run's outcome
 COMMON = {"n_clients": 50, "k": 10, "lr": 0.01, "local_epochs": 2, "batch_size": 32,
-          "lr_schedule": "cosine", "partition": "dirichlet"}
+          "lr_schedule": "cosine", "lr_min": 0.0, "partition": "dirichlet"}
 # knobs that only matter for one selector (e.g. T is ignored by random)
 PER_SELECTOR = {
     "power_of_choice": {"d": None},
@@ -17,7 +17,9 @@ PER_SELECTOR = {
     "subtrunc": {"subtrunc_b": 1.10, "subtrunc_lambda": 0.5, "subtrunc_r": 10,
                  "subtrunc_norm": False},
 }
-# NOT tagged: rounds, ckpt_*, config path. A run with fewer rounds is a prefix of a longer one.
+# NOT tagged: rounds, ckpt_*, config path. With lr_schedule constant a shorter run is a prefix of a
+# longer one; with cosine it is not (the schedule depends on rounds), so keep different budgets in
+# different result folders: sweep.py skips a job whose JSON exists whatever its rounds.
 
 
 def variant_tag(cfg):
