@@ -45,3 +45,19 @@ def test_summary_over_seeds(tmp_path):
                                            "config": {**CFG, "seed": seed}})
     s = summarize(load_dir(str(tmp_path)))
     assert len(s) == 1 and s["n_seeds"].iloc[0] == 2
+
+
+def test_selector_variants_are_separate_rows(tmp_path):
+    acc = {"client_acc": [0.5, 0.6, 0.7]}
+    st = {**CFG, "selector": "subtrunc"}
+    for seed in (0, 1):
+        _write(tmp_path, f"d{seed}.json", {**BASE, **acc, "cfg": {**st, "seed": seed}})
+        _write(tmp_path, f"b{seed}.json", {**BASE, **acc, "cfg": {**st, "seed": seed,
+                                                                 "subtrunc_b": 6.0}})
+        _write(tmp_path, f"k{seed}.json", {**BASE, **acc, "cfg": {**st, "seed": seed, "k": 20}})
+    r = load_run(str(tmp_path / "b0.json"))
+    assert r["selector"] == "subtrunc_subtrunc_b6.0" and r["base_selector"] == "subtrunc"
+    df = load_dir(str(tmp_path))
+    # k is a shared knob: not folded in, so the k=20 runs pool with the default ones
+    assert df["selector"].value_counts().to_dict() == {"subtrunc": 4, "subtrunc_subtrunc_b6.0": 2}
+    assert set(summarize(df)["selector"]) == {"subtrunc", "subtrunc_subtrunc_b6.0"}

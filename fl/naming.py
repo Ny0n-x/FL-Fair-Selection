@@ -22,13 +22,22 @@ PER_SELECTOR = {
 # different result folders: sweep.py skips a job whose JSON exists whatever its rounds.
 
 
-def variant_tag(cfg):
-    knobs = {**COMMON, **PER_SELECTOR.get(cfg["selector"], {})}
+def variant_tag(cfg, common=True):
+    """'_key{val}' for every knob that differs from its default ('' if none).
+
+    common=False tags only the selector's own knobs (PER_SELECTOR), e.g. to label SUBTRUNC b=6
+    apart from b=1.10 while runs that differ in a shared knob (k, lr, ...) stay comparable.
+    """
+    knobs = {**(COMMON if common else {}), **PER_SELECTOR.get(cfg["selector"], {})}
     parts = []
     for key in sorted(knobs):
         val = cfg.get(key, knobs[key])
         if val is None and knobs[key] is None:
             continue
+        # a float knob given as an int (sweep.py reads '--subtrunc_b 6' as YAML -> 6, main.py's
+        # argparse -> 6.0) must give the same name, or sweep.py never finds main.py's results
+        if isinstance(knobs[key], float) and isinstance(val, int) and not isinstance(val, bool):
+            val = float(val)
         if val != knobs[key]:
             parts.append(f"{key}{val}")
     return "".join("_" + p for p in parts)
