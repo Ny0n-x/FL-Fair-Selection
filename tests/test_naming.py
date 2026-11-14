@@ -1,6 +1,6 @@
 import os
 
-from fl.naming import result_name
+from fl.naming import result_name, variant_tag
 from sweep import grid, parse_extra, result_path
 
 BASE = {"selector": "random", "dataset": "cifar10", "alpha": 0.1, "good_def": "count", "seed": 0,
@@ -62,3 +62,19 @@ def test_guarantee_runs_once_per_seed_regardless_of_good_def():
     jobs = list(grid(["guarantee", "deficit"], [0.1], ["count", "weighted"], [0, 1]))
     assert sum(j[0] == "guarantee" for j in jobs) == 2
     assert sum(j[0] == "deficit" for j in jobs) == 4
+
+
+def test_common_false_tags_only_selector_knobs():
+    c = cfg(selector="subtrunc", k=20, lr=0.05, subtrunc_b=6.0)
+    assert variant_tag(c, common=False) == "_subtrunc_b6.0"
+    assert "k20" in variant_tag(c) and "lr0.05" in variant_tag(c)       # default unchanged
+    assert variant_tag(cfg(k=20), common=False) == ""                   # random has no own knobs
+
+
+def test_int_value_for_float_knob_names_like_main_py():
+    # sweep.py parses '--subtrunc_b 6' as YAML (int 6); main.py's argparse gives 6.0
+    assert result_name(cfg(selector="subtrunc", subtrunc_b=6)) == \
+        result_name(cfg(selector="subtrunc", subtrunc_b=6.0))
+    assert result_path("results", "subtrunc", "cifar10", 0.1, "count", 0,
+                       cfg=cfg(**parse_extra(["--subtrunc_b", "6"]))) == \
+        os.path.join("results", result_name(cfg(selector="subtrunc", subtrunc_b=6.0)) + ".json")
