@@ -1,1 +1,1 @@
-63b8cee Fix plots and compare: dataset filter, variant labels, LaTeX escaping; ignore ckpt and logs
+fa70d92 Merge main into final (history rewrite; keep final tree)

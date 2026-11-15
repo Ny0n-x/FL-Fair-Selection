@@ -66,20 +66,29 @@ def base_key(sel):
     keys = sorted(set(NAMES) | set(BASELINES) | set(OURS), key=len, reverse=True)
     return next((k for k in keys if sel == k or sel.startswith(k + "_")), sel)
 
+VARIANT_LS = {"eps0.01": ":", "eps1.0": "-."}   # extra line styles for ablation variants
+
+
 def style(selector, good):
-    """Colour, marker, fill, line style and label for a (selector, good_def) pair."""
+    """Colour, marker, fill, line style and label for a (selector, good_def) pair.
+    A variant (deficit_eps0.01, ...) keeps its family colour but gets its own line style."""
     key = base_key(selector)
     suffix = selector[len(key):].lstrip("_") if selector.startswith(key) else ""
+    ls_var = next((v for t, v in VARIANT_LS.items() if t in suffix), None)
+    if suffix and key in OURS and ls_var is None:
+        ls_var = ":"                            # unknown variant of our rules
     if key in OURS:
         c, m = OURS[key]
         weighted = good == "weighted"
         tag = f" [{suffix}]" if suffix else ""
         return {"color": c, "marker": m, "face": "white" if weighted else c,
-                "ls": "--" if weighted else "-",
+                "ls": ls_var or ("--" if weighted else "-"),
                 "label": f"{NAMES[key]} ({'wtd' if weighted else 'cnt'}){tag}"}
     c, m = BASELINES.get(key, ("#999999", "X"))
-    return {"color": c, "marker": m, "face": c, "ls": "-",
-            "label": NAMES.get(key, selector)}
+    label = NAMES.get(key, selector)
+    if key == "subtrunc" and suffix:
+        label = "SUBTRUNC"                      # b=6, lambda=0.95: state it in the caption
+    return {"color": c, "marker": m, "face": c, "ls": ls_var or "-", "label": label}
 
 
 def _order(keys):
@@ -90,6 +99,19 @@ def _order(keys):
 
 def _panel(ax, letter, text):
     ax.set_title(f"({letter}) {text}", loc="left", pad=3)
+
+
+def common_seed_runs(runs, alpha):
+    """Keep only seeds that every (selector, good) group has at this alpha, so curves and
+    CDFs compare the same partitions. Returns (runs, sorted seed list)."""
+    by = {}
+    for r in runs:
+        if r[KEYS["alpha"]] == alpha:
+            by.setdefault((r[KEYS["selector"]], r[KEYS["good"]]), set()).add(r[KEYS["seed"]])
+    if not by:
+        raise ValueError(f"no runs at alpha={alpha}")
+    seeds = set.intersection(*by.values())
+    return [r for r in runs if r[KEYS["seed"]] in seeds], sorted(seeds)
 
 
 def _group(runs, alpha):
@@ -182,7 +204,7 @@ def plot_deficit(runs, alpha):
     Solid line is the most underserved client, the band covers the middle 80% of clients
     and the thin line is the most overserved client. The dashed gray curve is the +-2 std
     spread that uniform random selection gives under the count definition."""
-    groups = _group(runs, alpha)
+    groups = {k: v for k, v in _group(runs, alpha).items() if k[1] == "count"}
     fig, ax = plt.subplots(figsize=(COL, 2.4))
     for key, rs in groups.items():
         st = style(*key)
@@ -357,9 +379,17 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--dataset", default="cifar10")
+    ap.add_argument("--all-seeds", action="store_true",
+                    help="use every seed of every method (default: only seeds all methods share)")
+    ap.add_argument("--variants", action="store_true", help="include ablation variants (eps, ...)")
     a = ap.parse_args()
     runs = [r for r in load_raw(a.results_dir)
-            if r[KEYS["dataset"]] == a.dataset and "_eps" not in r[KEYS["selector"]]]
+            if r[KEYS["dataset"]] == a.dataset
+            and (a.variants or "_eps" not in r[KEYS["selector"]])]
+    all_runs = runs                                  # Gate 1 uses every Random seed
+    if not a.all_seeds:
+        runs, seeds = common_seed_runs(runs, a.alpha)
+        print(f"{a.dataset} alpha={a.alpha:g}: seeds shared by all methods = {seeds}")
     tag = f"alpha{a.alpha:g}"
     save(plot_curves(runs, a.alpha), a.out, f"curves_{tag}")
     save(plot_acc_cdf(runs, a.alpha), a.out, f"client_acc_cdf_{tag}")
@@ -370,12 +400,14 @@ def main():
             save(plot_selection_counts(r), a.out, f"selection_counts_{name}")
             if r[KEYS["selector"]] == "random":
                 save(plot_gate1(r), a.out, f"gate1_{tag}_seed{a.seed}")
-    rnd = [gate1(r) for r in runs if r[KEYS["selector"]] == "random"]
+    rnd = [gate1(r) for r in all_runs if r[KEYS["selector"]] == "random"]
     if rnd:
         per_run = pd.DataFrame(rnd)
         save(plot_gate1_seeds(per_run, pool(per_run)), a.out, "gate1_seeds")
     summary = summarize(load_dir(a.results_dir))
-    summary = summary[(summary["dataset"] == a.dataset) & ~summary["selector"].str.contains("_eps")]
+    summary = summary[summary["dataset"] == a.dataset]
+    if not a.variants:
+        summary = summary[~summary["selector"].str.contains("_eps")]
     if summary["selector"].nunique() > 1:
         save(plot_tradeoff(summary, ylabel="Worst-10% client accuracy"), a.out, "tradeoff_worst10")
         save(plot_tradeoff(summary, "jain_final", ylabel="Jain's index"), a.out, "tradeoff_jain")
