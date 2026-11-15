@@ -12,8 +12,6 @@ is saved to results/ckpt/. Saving by time keeps Drive writes low: a DivFL checkp
 and saving that every 10 rounds from two parallel runs took Colab's Drive mount down. If the
 process dies, running the same command again resumes from the last checkpoint instead of round 0. The
 checkpoint is deleted once the results JSON is written.
-
-Later, move the loop into fl/train.py and keep this as a thin wrapper.
 """
 import argparse, copy, json, math, os, random, time
 import numpy as np
@@ -32,7 +30,7 @@ DATASETS = {
     "cifar10": dict(cls=datasets.CIFAR10, ch=3, hw=32, mean=0.5,    std=0.5),
     "mnist":   dict(cls=datasets.MNIST,   ch=1, hw=28, mean=0.1307, std=0.3081),
 }
-# ---------------- data (stub; swap for Person A's get_partition) ----------------
+# ---------------- data ----------------
 def load_partition(cfg):
     """Suresh's index partition -> per-client (X, y) tensors."""
     spec = DATASETS[cfg["dataset"]]
@@ -52,11 +50,6 @@ def load_partition(cfg):
 
 
 # ---------------- model + helpers ----------------
-# class CNN(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.c1, self.c2 = nn.Conv2d(3, 32, 3), nn.Conv2d(32, 64, 3)
-#         self.f1, self.f2 = nn.Linear(64 * 6 * 6, 128), nn.Linear(128, 10)
 class CNN(nn.Module):
     def __init__(self, ch=3, hw=32):
         super().__init__()

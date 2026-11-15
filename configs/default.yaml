@@ -2,7 +2,7 @@ dataset: cifar10
 alpha: 0.1
 n_clients: 50
 k: 10
-rounds: 100
+rounds: 300
 local_epochs: 2
 batch_size: 32   # not set before; main.py needs it
 lr: 0.01        # tune once on Random, then freeze
