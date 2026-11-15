@@ -63,23 +63,49 @@ plt.rcParams.update({
 })
 
 
+VARIANT_LS = [":", "-.", (0, (5, 1)), (0, (3, 1, 1, 1, 1, 1))]
+
+
+def split_variant(selector):
+    """metrics.loader labels a run with non-default selector knobs '<base>_<tag>', e.g.
+    'subtrunc_subtrunc_b6.0' -> ('subtrunc', 'subtrunc_b6.0'). A bare name -> (name, '')."""
+    for base in sorted({**NAMES, **OURS, **BASELINES}, key=len, reverse=True):
+        if selector == base:
+            return base, ""
+        if selector.startswith(base + "_"):
+            return base, selector[len(base) + 1:]
+    return selector, ""
+
+
+def display_name(selector):
+    """'subtrunc_subtrunc_b6.0' -> 'SUBTRUNC (subtrunc_b6.0)'."""
+    base, tag = split_variant(selector)
+    return NAMES.get(base, base) + (f" ({tag})" if tag else "")
+
+
 def style(selector, good):
-    """Colour, marker, fill, line style and label for a (selector, good_def) pair."""
-    if selector in OURS:
-        c, m = OURS[selector]
-        weighted = good == "weighted"
-        return {"color": c, "marker": m, "face": "white" if weighted else c,
-                "ls": "--" if weighted else "-",
-                "label": f"{NAMES[selector]} ({'wtd' if weighted else 'cnt'})"}
-    c, m = BASELINES.get(selector, ("#999999", "X"))
-    return {"color": c, "marker": m, "face": c, "ls": "-",
-            "label": NAMES.get(selector, selector)}
+    """Colour, marker, fill, line style and label for a (selector, good_def) pair.
+    A variant keeps its base method's colour and marker and gets its own non-solid line style."""
+    base, tag = split_variant(selector)
+    weighted = base in OURS and good == "weighted"
+    c, m = OURS.get(base) or BASELINES.get(base, ("#999999", "X"))
+    ls = "--" if weighted else "-"
+    if tag:   # stable per tag, so a variant looks the same in every figure
+        ls = VARIANT_LS[sum(map(ord, tag)) % len(VARIANT_LS)]
+    label = display_name(selector)
+    if base in OURS:
+        label += f" ({'wtd' if weighted else 'cnt'})"
+    return {"color": c, "marker": m, "face": "white" if weighted else c, "ls": ls, "label": label}
 
 
 def _order(keys):
-    """Baselines first, then our rules. Count before weighted."""
+    """Baselines first, then our rules; each method before its variants. Count before weighted."""
     rank = list(BASELINES) + list(OURS)
-    return sorted(keys, key=lambda k: (rank.index(k[0]) if k[0] in rank else 99, k[1]))
+
+    def key(k):
+        base, tag = split_variant(k[0])
+        return (rank.index(base) if base in rank else 99, tag, k[1])
+    return sorted(keys, key=key)
 
 
 def _panel(ax, letter, text):

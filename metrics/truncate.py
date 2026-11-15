@@ -18,6 +18,7 @@ from collections import defaultdict
 
 import numpy as np
 
+from fl.naming import variant_tag
 from metrics.metrics import outcome_metrics
 
 LAST = 10   # same window as metrics.loader's *_last10 columns
@@ -53,24 +54,30 @@ def truncate(run, rounds):
 
 def report(paths, step=100):
     """Mean over seeds of global acc and worst-10% client acc (both last-10-round means) at
-    every `step` rounds, per selector and alpha."""
+    every `step` rounds, per dataset, selector (variants apart, as in metrics.loader) and alpha."""
     groups = defaultdict(list)
     for p in paths:
         r = json.load(open(p))
-        groups[(r["cfg"]["selector"], float(r["cfg"]["alpha"]))].append(r)
+        c = r["cfg"]
+        sel = c["selector"] + variant_tag(c, common=False)
+        groups[(c.get("dataset", "?"), sel, float(c["alpha"]))].append(r)
     n_max = min(len(r["global_acc"]) for rs in groups.values() for r in rs)
     marks = list(range(step, n_max + 1, step))
-    print("global acc / worst-10% client acc, mean of the last 10 rounds before each mark, "
+    print(f"global acc / worst-10% client acc, mean of the last {LAST} rounds before each mark, "
           "averaged over seeds")
-    print(f"{'selector':<16}{'alpha':>6} {'seeds':>5}  " + "".join(f"{f'@{m}':>14}" for m in marks))
-    for (sel, alpha), rs in sorted(groups.items()):
+    width = max(16, 2 + max(len(f"{d} {s}") for d, s, _ in groups))
+    print(f"{'selector':<{width}}{'alpha':>6} {'seeds':>5}  "
+          + "".join(f"{f'@{m}':>14}" for m in marks))
+    for (ds, sel, alpha), rs in sorted(groups.items()):
         cells = []
         for m in marks:
-            g = np.mean([np.mean(r["global_acc"][m - LAST:m]) for r in rs])
+            lo = max(0, m - LAST)   # a mark before round LAST averages what there is
+            g = np.mean([np.mean(r["global_acc"][lo:m]) for r in rs])
             w = np.mean([np.mean([outcome_metrics(a)["worst10_mean"]
-                                  for a in r["client_acc_rounds"][m - LAST:m]]) for r in rs])
+                                  for a in r["client_acc_rounds"][lo:m]]) for r in rs])
             cells.append(f"{g:.3f}/{w:.3f}")
-        print(f"{sel:<16}{alpha:>6} {len(rs):>5}  " + "".join(f"{c:>14}" for c in cells))
+        print(f"{ds + ' ' + sel:<{width}}{alpha:>6} {len(rs):>5}  "
+              + "".join(f"{c:>14}" for c in cells))
 
 
 def main():

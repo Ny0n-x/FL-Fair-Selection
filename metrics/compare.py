@@ -16,7 +16,7 @@ import pandas as pd
 from scipy.stats import ttest_1samp, wilcoxon
 
 from metrics.loader import REFERENCE, load_dir
-from metrics.plots import NAMES
+from metrics.plots import display_name
 
 # metric -> (label, higher is better)
 METRICS = {
@@ -97,7 +97,7 @@ def latex_table(df, comp, dataset, alpha, metrics=None, test="p_ttest", sig=0.05
     lines = ["\\begin{tabular}{l" + "c" * len(metrics) + "}", "\\toprule",
              f"Method & {head} \\\\", "\\midrule"]
     for sel, good in order:
-        name = NAMES.get(sel, sel)
+        name = display_name(sel).replace("_", "\\_")   # variant tags have '_': escape for LaTeX
         if sel != REFERENCE and sub[sub["selector"] == sel]["good"].nunique() > 1:
             name += f" ({'wtd' if good == 'weighted' else 'cnt'})"
         cells = []
