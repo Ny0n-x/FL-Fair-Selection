@@ -1,1 +1,1 @@
-fd3ce43 Run 300 rounds with checkpoints so a Colab disconnect does not lose runs
+63b8cee Fix plots and compare: dataset filter, variant labels, LaTeX escaping; ignore ckpt and logs

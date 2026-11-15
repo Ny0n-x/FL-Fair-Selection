@@ -221,3 +221,8 @@ __marimo__/
 
 
 data/raw/
+results/ckpt/
+results/logs/
+results_stub/
+.DS_Store
+Thumbs.db

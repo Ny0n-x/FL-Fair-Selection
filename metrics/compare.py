@@ -16,7 +16,7 @@ import pandas as pd
 from scipy.stats import ttest_1samp, wilcoxon
 
 from metrics.loader import REFERENCE, load_dir
-from metrics.plots import NAMES
+from metrics.plots import NAMES, base_key
 
 # metric -> (label, higher is better)
 METRICS = {
@@ -83,6 +83,7 @@ def latex_table(df, comp, dataset, alpha, metrics=None, test="p_ttest", sig=0.05
     a dagger where the paired difference to Random has p < sig."""
     metrics = [m for m in (metrics or METRICS) if m in df.columns]
     sub = df[(df["dataset"] == dataset) & (df["alpha"] == alpha)]
+    sub = sub[~sub["selector"].str.contains("eps", na=False)]
     if sub.empty:
         raise ValueError(f"no runs for {dataset} alpha={alpha}")
     grp = sub.groupby(["selector", "good"])
@@ -97,7 +98,9 @@ def latex_table(df, comp, dataset, alpha, metrics=None, test="p_ttest", sig=0.05
     lines = ["\\begin{tabular}{l" + "c" * len(metrics) + "}", "\\toprule",
              f"Method & {head} \\\\", "\\midrule"]
     for sel, good in order:
-        name = NAMES.get(sel, sel)
+        key = base_key(sel)
+        suffix = sel[len(key):].lstrip("_") if sel.startswith(key) else ""
+        name = NAMES.get(key, key) + (f" [{suffix}]" if suffix else "")
         if sel != REFERENCE and sub[sub["selector"] == sel]["good"].nunique() > 1:
             name += f" ({'wtd' if good == 'weighted' else 'cnt'})"
         cells = []
@@ -115,7 +118,7 @@ def latex_table(df, comp, dataset, alpha, metrics=None, test="p_ttest", sig=0.05
             if c is not None and (sel, good, m) in c.index and c.loc[(sel, good, m), test] < sig:
                 txt += "$^\\dagger$"
             cells.append(txt)
-        lines.append(f"{name} & " + " & ".join(cells) + " \\\\")
+        lines.append(f"{name.replace('_', chr(92) + '_')} & " + " & ".join(cells) + " \\\\")
     lines += ["\\bottomrule", "\\end{tabular}"]
     seeds = sorted(set(n))
     note = (f"% {dataset}, alpha={alpha:g}, seeds per method: {', '.join(map(str, seeds))}. "
@@ -141,7 +144,7 @@ def main():
         show["metric"] = [METRICS[m][0].replace("\\", "") for m in show["metric"]]
         show["diff [95% CI]"] = [f"{d:+.4f} [{lo:+.4f}, {hi:+.4f}]" for d, lo, hi
                                  in zip(show["diff_mean"], show["ci_lo"], show["ci_hi"])]
-        cols = ["selector", "good", "alpha", "metric", "n_pairs", "diff [95% CI]",
+        cols = ["dataset", "selector", "good", "alpha", "metric", "n_pairs", "diff [95% CI]",
                 "p_ttest", "p_wilcoxon"]
         print(show[cols].to_string(index=False, float_format=lambda v: f"{v:.3g}"))
     if a.out:
