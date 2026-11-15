@@ -1,0 +1,15 @@
+% cifar10, alpha=0.5, seeds per method: 3, 5. Mean +- std over seeds. Dagger: paired ttest vs Random, p < 0.05.
+\begin{tabular}{lccccccc}
+\toprule
+Method & Global acc. $\uparrow$ & Worst-10\% $\uparrow$ & Min $\uparrow$ & Jain $\uparrow$ & Var. $\downarrow$ & Sel. var. $\downarrow$ & Rounds $\downarrow$ \\
+\midrule
+Random & 0.671 $\pm$ 0.006 & 0.562 $\pm$ 0.015 & 0.531 $\pm$ 0.017 & 0.993 $\pm$ 0.001 & 0.003 $\pm$ 0.000 & 53.968 $\pm$ 16.645 & 40.4 $\pm$ 3.6 \\
+Deficit (cnt) & 0.673 $\pm$ 0.004 & 0.577 $\pm$ 0.007 & \textbf{0.553 $\pm$ 0.023} & \textbf{0.994 $\pm$ 0.001} & \textbf{0.003 $\pm$ 0.000} & 0.344 $\pm$ 0.061$^\dagger$ & 40.8 $\pm$ 3.8 \\
+Deficit (wtd) & 0.668 $\pm$ 0.007 & 0.568 $\pm$ 0.003 & 0.536 $\pm$ 0.012$^\dagger$ & 0.993 $\pm$ 0.000 & 0.003 $\pm$ 0.000 & 515.600 $\pm$ 59.552$^\dagger$ & \textbf{37.3 $\pm$ 1.5} \\
+DivFL & 0.663 $\pm$ 0.006 & 0.557 $\pm$ 0.009 & 0.522 $\pm$ 0.037 & 0.993 $\pm$ 0.001 & 0.003 $\pm$ 0.000 & 1103.400 $\pm$ 242.431$^\dagger$ & 39.0 $\pm$ 4.0 \\
+Guarantee & \textbf{0.675 $\pm$ 0.005} & 0.574 $\pm$ 0.004$^\dagger$ & 0.535 $\pm$ 0.015 & 0.993 $\pm$ 0.000$^\dagger$ & 0.003 $\pm$ 0.000 & 29.080 $\pm$ 8.477 & 40.0 $\pm$ 3.6 \\
+Power-of-Choice & 0.673 $\pm$ 0.004 & \textbf{0.580 $\pm$ 0.011}$^\dagger$ & 0.551 $\pm$ 0.037 & 0.993 $\pm$ 0.001 & 0.003 $\pm$ 0.000$^\dagger$ & 189.944 $\pm$ 36.747$^\dagger$ & 48.4 $\pm$ 5.7$^\dagger$ \\
+Round-Robin & 0.671 $\pm$ 0.005 & 0.570 $\pm$ 0.013 & 0.541 $\pm$ 0.017 & 0.993 $\pm$ 0.001 & 0.003 $\pm$ 0.000 & \textbf{0.000 $\pm$ 0.000}$^\dagger$ & 41.6 $\pm$ 2.7 \\
+SUBTRUNC [subtrunc\_b6.0\_subtrunc\_lambda0.95] & 0.669 $\pm$ 0.006 & 0.574 $\pm$ 0.006 & 0.546 $\pm$ 0.023 & 0.994 $\pm$ 0.001 & 0.003 $\pm$ 0.000 & 973.560 $\pm$ 126.828$^\dagger$ & 39.4 $\pm$ 4.3 \\
+\bottomrule
+\end{tabular}
