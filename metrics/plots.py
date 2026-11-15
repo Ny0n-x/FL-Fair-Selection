@@ -62,24 +62,30 @@ plt.rcParams.update({
     "pdf.fonttype": 42,
 })
 
+def base_key(sel):
+    keys = sorted(set(NAMES) | set(BASELINES) | set(OURS), key=len, reverse=True)
+    return next((k for k in keys if sel == k or sel.startswith(k + "_")), sel)
 
 def style(selector, good):
     """Colour, marker, fill, line style and label for a (selector, good_def) pair."""
-    if selector in OURS:
-        c, m = OURS[selector]
+    key = base_key(selector)
+    suffix = selector[len(key):].lstrip("_") if selector.startswith(key) else ""
+    if key in OURS:
+        c, m = OURS[key]
         weighted = good == "weighted"
+        tag = f" [{suffix}]" if suffix else ""
         return {"color": c, "marker": m, "face": "white" if weighted else c,
                 "ls": "--" if weighted else "-",
-                "label": f"{NAMES[selector]} ({'wtd' if weighted else 'cnt'})"}
-    c, m = BASELINES.get(selector, ("#999999", "X"))
+                "label": f"{NAMES[key]} ({'wtd' if weighted else 'cnt'}){tag}"}
+    c, m = BASELINES.get(key, ("#999999", "X"))
     return {"color": c, "marker": m, "face": c, "ls": "-",
-            "label": NAMES.get(selector, selector)}
+            "label": NAMES.get(key, selector)}
 
 
 def _order(keys):
     """Baselines first, then our rules. Count before weighted."""
     rank = list(BASELINES) + list(OURS)
-    return sorted(keys, key=lambda k: (rank.index(k[0]) if k[0] in rank else 99, k[1]))
+    return sorted(keys, key=lambda k: (rank.index(base_key(k[0])) if base_key(k[0]) in rank else 99, k[1]))
 
 
 def _panel(ax, letter, text):
@@ -350,8 +356,10 @@ def main():
     ap.add_argument("--out", default="figures")
     ap.add_argument("--alpha", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--dataset", default="cifar10")
     a = ap.parse_args()
-    runs = load_raw(a.results_dir)
+    runs = [r for r in load_raw(a.results_dir)
+            if r[KEYS["dataset"]] == a.dataset and "_eps" not in r[KEYS["selector"]]]
     tag = f"alpha{a.alpha:g}"
     save(plot_curves(runs, a.alpha), a.out, f"curves_{tag}")
     save(plot_acc_cdf(runs, a.alpha), a.out, f"client_acc_cdf_{tag}")
@@ -367,6 +375,7 @@ def main():
         per_run = pd.DataFrame(rnd)
         save(plot_gate1_seeds(per_run, pool(per_run)), a.out, "gate1_seeds")
     summary = summarize(load_dir(a.results_dir))
+    summary = summary[(summary["dataset"] == a.dataset) & ~summary["selector"].str.contains("_eps")]
     if summary["selector"].nunique() > 1:
         save(plot_tradeoff(summary, ylabel="Worst-10% client accuracy"), a.out, "tradeoff_worst10")
         save(plot_tradeoff(summary, "jain_final", ylabel="Jain's index"), a.out, "tradeoff_jain")
