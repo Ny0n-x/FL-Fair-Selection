@@ -42,3 +42,10 @@ def test_loss_filler_picks_top_k_in_round_one():
 
     sel = GuaranteeSelector(n, k, [1] * n, {"T": 10, "filler": "loss", "seed": 0})
     assert set(sel.select(0, Ctx())) == set(np.argsort(-losses)[:k].tolist())
+
+def test_guarantee_rejects_M_other_than_1():
+    import pytest
+    from selection.guarantee import GuaranteeSelector
+    GuaranteeSelector(20, 4, [1] * 20, {"T": 5, "M": 1})
+    with pytest.raises(ValueError):
+        GuaranteeSelector(20, 4, [1] * 20, {"T": 5, "M": 2})

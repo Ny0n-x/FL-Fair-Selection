@@ -61,3 +61,20 @@ def test_selector_variants_are_separate_rows(tmp_path):
     # k is a shared knob: not folded in, so the k=20 runs pool with the default ones
     assert df["selector"].value_counts().to_dict() == {"subtrunc": 4, "subtrunc_subtrunc_b6.0": 2}
     assert set(summarize(df)["selector"]) == {"subtrunc", "subtrunc_subtrunc_b6.0"}
+
+
+def test_mixed_rounds_or_schedule_warns(tmp_path):
+    acc = {"client_acc": [0.5, 0.6, 0.7]}
+    _write(tmp_path, "a.json", {**BASE, **acc, "cfg": {**CFG, "lr_schedule": "cosine"}})
+    _write(tmp_path, "b.json", {**BASE, **acc, "cfg": {**CFG, "seed": 1, "lr_schedule": "cosine"}})
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")      # same setup: no warning
+        load_dir(str(tmp_path))
+    _write(tmp_path, "c.json", {**BASE, **acc, "cfg": {**CFG, "seed": 2}})   # constant (old)
+    with pytest.warns(UserWarning, match="lr_scheduleconstant"):
+        load_dir(str(tmp_path))
+    _write(tmp_path, "c.json", {**BASE, **acc, "global_acc": [0.1] * 6,
+                                "cfg": {**CFG, "seed": 2, "lr_schedule": "cosine"}})
+    with pytest.warns(UserWarning, match="rounds=6"):
+        load_dir(str(tmp_path))

@@ -19,7 +19,8 @@ PER_SELECTOR = {
 }
 # NOT tagged: rounds, ckpt_*, config path. With lr_schedule constant a shorter run is a prefix of a
 # longer one; with cosine it is not (the schedule depends on rounds), so keep different budgets in
-# different result folders: sweep.py skips a job whose JSON exists whatever its rounds.
+# different result folders. sweep.py checks an existing JSON's rounds and lr_schedule before
+# skipping its job, and stops if they differ (sweep.budget_mismatch).
 
 
 def variant_tag(cfg, common=True):

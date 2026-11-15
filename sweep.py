@@ -12,6 +12,7 @@ Usage:
 """
 import argparse
 import itertools
+import json
 import os
 import subprocess
 import sys
@@ -50,6 +51,30 @@ def result_path(results_dir, selector, dataset, alpha, good, seed, cfg=None):
     return os.path.join(results_dir, result_name(full) + ".json")
 
 
+def budget_mismatch(path, cfg):
+    """Why the results JSON at `path` is not a finished run of `cfg`'s budget, or None if it is.
+
+    rounds and lr_schedule are not part of the file name (fl/naming.py), so a JSON from a run with
+    another budget or schedule sits at the same path, e.g. the old constant-lr results under the
+    name of a cosine run. Skipping such a job would silently keep the wrong run.
+    A missing lr_schedule means constant, as in main.lr_at."""
+    try:
+        with open(path) as f:
+            old = json.load(f)
+        have = old.get("cfg") or old.get("config") or {}
+        have_rounds = have.get("rounds", len(old.get("global_acc", [])))
+    except (OSError, ValueError, AttributeError) as e:
+        return f"unreadable ({e})"
+    reasons = []
+    if have_rounds != cfg.get("rounds"):
+        reasons.append(f"rounds {have_rounds} != {cfg.get('rounds')}")
+    sched_have = have.get("lr_schedule") or "constant"
+    sched_want = cfg.get("lr_schedule") or "constant"
+    if sched_have != sched_want:
+        reasons.append(f"lr_schedule {sched_have} != {sched_want}")
+    return "; ".join(reasons) or None
+
+
 def grid(selectors, alphas, goods, seeds):
     for sel, a, good, seed in itertools.product(selectors, alphas, goods, seeds):
         if sel in GOOD_AGNOSTIC and good != goods[0]:
@@ -86,12 +111,21 @@ def main():
     base_cfg = {**yaml.safe_load(open(a.config)), **parse_extra(extra)}   # what main.py will see
     dataset = base_cfg["dataset"]
 
-    jobs, skipped = [], 0
+    jobs, skipped, conflicts = [], 0, []
     for job in grid(a.selectors, a.alphas, a.good, a.seeds):
-        if not a.force and os.path.exists(result_path(a.results, job[0], dataset, *job[1:], cfg=base_cfg)):
-            skipped += 1
-        else:
+        path = result_path(a.results, job[0], dataset, *job[1:], cfg=base_cfg)
+        if a.force or not os.path.exists(path):
             jobs.append(job)
+        elif why := budget_mismatch(path, base_cfg):
+            conflicts.append((path, why))
+        else:
+            skipped += 1
+    if conflicts:   # main.py would overwrite these, and skipping them would keep the wrong run
+        for path, why in conflicts:
+            print(f"  {path}: {why}")
+        sys.exit(f"{len(conflicts)} existing result(s) come from a different budget or lr schedule. "
+                 "Move them aside (or point results/ at a fresh folder), or pass --force to "
+                 "overwrite them.")
     print(f"{len(jobs)} to run, {skipped} already done")
     if a.dry_run:
         for sel, al, good, seed in jobs:

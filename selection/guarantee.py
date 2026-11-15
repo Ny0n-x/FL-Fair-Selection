@@ -9,6 +9,9 @@ class GuaranteeSelector(Selector):
     def __init__(self, n_clients, k, data_sizes, cfg):
         super().__init__(n_clients, k, data_sizes, cfg)
         self.T = cfg.get("T", 10)
+        M = cfg.get("M")
+        if M is not None and int(M) != 1:   # M is in the result name, so M=2 must not run as M=1
+            raise ValueError(f"guarantee implements M=1 only, got M={M}")
         assert n_clients <= k * self.T, "infeasible: need N <= K*T (M=1)"
         self.tracker = Tracker(n_clients, k, data_sizes, self.T)
         self.rng = np.random.default_rng(cfg.get("seed", 0))

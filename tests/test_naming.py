@@ -78,3 +78,23 @@ def test_int_value_for_float_knob_names_like_main_py():
     assert result_path("results", "subtrunc", "cifar10", 0.1, "count", 0,
                        cfg=cfg(**parse_extra(["--subtrunc_b", "6"]))) == \
         os.path.join("results", result_name(cfg(selector="subtrunc", subtrunc_b=6.0)) + ".json")
+
+
+def _result(path, **cfg_kw):
+    import json
+    with open(path, "w") as f:
+        json.dump({"cfg": cfg(**cfg_kw), "global_acc": [0.1] * cfg(**cfg_kw)["rounds"]}, f)
+
+
+def test_budget_mismatch_flags_other_rounds_or_schedule(tmp_path):
+    from sweep import budget_mismatch
+    p = str(tmp_path / "r.json")
+    _result(p)
+    assert budget_mismatch(p, cfg()) is None
+    assert "rounds 300 != 600" in budget_mismatch(p, cfg(rounds=600))
+    # old results have lr_schedule None (= constant) but the name of a cosine run
+    _result(p, lr_schedule=None)
+    assert "lr_schedule constant != cosine" in budget_mismatch(p, cfg())
+    assert budget_mismatch(p, cfg(lr_schedule="constant")) is None
+    (tmp_path / "bad.json").write_text("{trunc")
+    assert budget_mismatch(str(tmp_path / "bad.json"), cfg()).startswith("unreadable")

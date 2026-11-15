@@ -22,10 +22,11 @@ class SubTruncSelector:
       - g_i = stored local-update vector (refreshed when client i is selected, all
         clients at round 0), since fresh gradients from all N clients each round are
         costly; the paper writes grad f_i(w)
-      - "most recent loss": the client's last reported local training loss (global-model
-        loss on its data at round 0)
+      - "most recent loss": the CURRENT global model's loss on each client's train data,
+        re-measured for all N clients every round (N extra queries per round)
       - G is not normalized, so lam's effect depends on the gradient scale; if SUBTRUNC
-        behaves exactly like DivFL, try subtrunc_norm: true (divides G by its maximum)
+        behaves exactly like DivFL, try subtrunc_norm: true (scales the similarities by
+        1 / (N * max), so G(S) lies in [0, 1] like the truncated H term)
     """
 
     def __init__(self, n_clients, k, data_sizes, cfg):
@@ -82,8 +83,5 @@ class SubTruncSelector:
         return chosen
 
     def update(self, round_idx, selected, ctx):
-        losses = getattr(ctx, "losses", {})
-        for i in selected:
+        for i in selected:   # losses are re-measured for everyone in select()
             self.G[i] = ctx.updates[i]
-            if i in losses:
-                self.loss[i] = losses[i]

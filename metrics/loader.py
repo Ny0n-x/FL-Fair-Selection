@@ -6,6 +6,7 @@ import argparse
 import glob
 import json
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -110,11 +111,36 @@ def add_rounds_to_target(df):
     return df.drop(columns="_global_acc")
 
 
+def shared_setup(r):
+    """(rounds, tag of the shared knobs) of a loaded run. Two runs compared or pooled in the
+    tables should agree on it; the selector's own knobs are already in its label."""
+    cfg = r.get("cfg") or r.get("config") or {}
+    tag = variant_tag({**cfg, "selector": None, "lr_schedule": cfg.get("lr_schedule") or "constant"})
+    return len(r[KEYS["global_acc"]]), tag
+
+
+def warn_mixed_setups(runs):
+    """Warn when runs at one (dataset, alpha) differ in rounds or shared knobs (k, lr,
+    lr_schedule, ...). They are still pooled, as before, but the tables would otherwise
+    average or compare e.g. a 300-round cosine run with a 600-round constant one in silence."""
+    seen = {}
+    for r in runs:
+        rounds, tag = shared_setup(r)
+        seen.setdefault((r[KEYS["dataset"]], r[KEYS["alpha"]]), set()).add(
+            f"rounds={rounds}{tag or ' (defaults)'}")
+    for (ds, a), setups in sorted(seen.items()):
+        if len(setups) > 1:
+            warnings.warn(f"{ds} alpha={a:g}: runs differ in shared settings and are pooled anyway: "
+                          f"{sorted(setups)}", stacklevel=2)
+
+
 def load_dir(results_dir="results"):
     paths = sorted(glob.glob(os.path.join(results_dir, "*.json")))
     if not paths:
         raise FileNotFoundError(f"no JSON files in {results_dir}")
-    return add_rounds_to_target(pd.DataFrame([run_metrics(load_run(p)) for p in paths]))
+    runs = [load_run(p) for p in paths]
+    warn_mixed_setups(runs)
+    return add_rounds_to_target(pd.DataFrame([run_metrics(r) for r in runs]))
 
 
 def summarize(df):
